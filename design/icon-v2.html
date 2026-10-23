@@ -73,7 +73,7 @@ function layerGeo(kind) {
 const mat = (h, s, l) => new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(((h % 360) + 360) % 360 / 360, s, l) });
 // A tower like real play: most drops perfect, a few misses where the block shrinks and shifts.
 // misses: {layerIndex: [shrink, dx, dz]}; hue ramps from h0 (bottom) to h1 (top).
-function tower(kind, x, z, layers, h0, h1, scale, misses = {}) {
+function tower(kind, x, z, layers, h0, h1, scale, misses = {}, sink = 0) {
   const g = new THREE.Group();
   const base = new THREE.Mesh(layerGeo(kind), mat(h0, 0.65, 0.5));
   base.scale.set(scale, 40, scale); base.position.y = -40; g.add(base);
@@ -85,7 +85,7 @@ function tower(kind, x, z, layers, h0, h1, scale, misses = {}) {
     m.scale.set(s, 1, s); m.position.set(ox, i, oz); g.add(m);
   }
   g.rotation.y = Math.PI / 4;
-  g.position.set(x, 0, z); scene.add(g);
+  g.position.set(x, -sink, z); scene.add(g);
 }
 const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2];
 const thirdTop = { star: [20, 45], hexagon: [20, 45], triangle: [20, 45] }[third];
@@ -96,9 +96,9 @@ if (layout === 'I') {
   tower(third, ...at(-0.1, 2.9), 3, thirdTop[0], thirdTop[1], 2.15, { 1: [0.9, -0.1, 0] });
 } else {
   // H: third shape tall at the back, heart medium on the left, circle short on the right
-  tower(third, ...at(0.4, -3.0), 8, 15, 45, 2.05, { 3: [0.9, 0.1, 0], 6: [0.92, 0, -0.1] });
-  tower('heart', ...at(-4.4, 0.6), 5, 280, 335, 2.0, { 2: [0.9, -0.1, 0] });
-  tower('circle', ...at(4.5, 1.4), 3, 175, 120, 1.75, { 1: [0.88, 0, 0.1] });
+  tower(third, ...at(0.4, -3.0), 14, 0, 50, 2.75, { 2: [0.93, 0.2, 0], 5: [0.96, 0, -0.12], 6: [0.9, -0.22, 0], 10: [0.95, 0, 0.15], 12: [0.97, 0.1, 0] }, 6);
+  tower('heart', ...at(-4.4, 0.6), 11, 270, 340, 2.6, { 1: [0.92, -0.2, 0], 4: [0.96, 0, 0.14], 5: [0.93, 0.16, 0], 8: [0.95, 0, -0.18] }, 6);
+  tower('circle', ...at(4.5, 1.4), 9, 185, 110, 2.3, { 0: [0.95, 0, 0.15], 3: [0.9, 0.2, 0], 4: [0.97, 0, -0.1], 7: [0.94, -0.15, 0] }, 6);
 }
 const view = 15.2, cy = 3.2;
 const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
