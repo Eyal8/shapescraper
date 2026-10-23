@@ -648,7 +648,10 @@ window.Ads = (function () {
   const MIN_SCORE_TO_CONTINUE = 5;
   // Best Endless score in the previous shape that unlocks each shape; it rises as you go. Any shape or mode can also be unlocked with a rewarded ad.
   // Each mode has its own targets: Endless shapes unlock from Endless scores, Time Attack shapes from Time Attack scores.
-  const UNLOCK = { endless: { circle: 20, triangle: 25, pentagon: 30, hexagon: 35 }, time: { circle: 15, triangle: 20, pentagon: 25, hexagon: 30 } };
+  const UNLOCK = {
+    endless: { circle: 20, triangle: 25, pentagon: 30, hexagon: 35, octagon: 40, cross: 45, heart: 50, star: 55 },
+    time: { circle: 15, triangle: 20, pentagon: 25, hexagon: 30, octagon: 33, cross: 36, heart: 40, star: 44 }
+  };
   const TIME_START = 60, TIME_BONUS = 2, TIME_CONTINUE = 15;
   const MODE_UNLOCK = { daily: 10, time: 20 }; // best Endless score (any shape) that opens each mode
   const DAILY_HISTORY = 60;    // how many past days the calendar offers
@@ -661,9 +664,9 @@ window.Ads = (function () {
   };
 
   // ---------- shapes, modes, progress ----------
-  const SHAPES = ['square', 'circle', 'triangle', 'pentagon', 'hexagon'];
-  const SHAPE_NAMES = { square: 'Square', circle: 'Circle', triangle: 'Triangle', pentagon: 'Pentagon', hexagon: 'Hexagon' };
-  const SHAPE_HUE = { square: 200, circle: 330, triangle: 28, pentagon: 145, hexagon: 265 };
+  const SHAPES = ['square', 'circle', 'triangle', 'pentagon', 'hexagon', 'octagon', 'cross', 'heart', 'star'];
+  const SHAPE_NAMES = { square: 'Square', circle: 'Circle', triangle: 'Triangle', pentagon: 'Pentagon', hexagon: 'Hexagon', octagon: 'Octagon', cross: 'Cross', heart: 'Heart', star: 'Star' };
+  const SHAPE_HUE = { square: 200, circle: 330, triangle: 28, pentagon: 145, hexagon: 265, octagon: 185, cross: 8, heart: 345, star: 48 };
   const SHAPE_FEEL = {
     square: 'Classic slicing: the overhang is cut off in a straight line.',
     circle: 'Stays a circle. Miss and it shrinks; circles forgive in every direction.',
@@ -739,9 +742,33 @@ window.Ads = (function () {
   function fmtDay(key, opts) { return keyToDate(key).toLocaleDateString(undefined, opts || { weekday: 'short', month: 'short', day: 'numeric' }); }
 
   // ---------- 2D footprints (multipolygons in x/z) ----------
-  const SIDES = { square: 4, triangle: 3, pentagon: 5, hexagon: 6, circle: 48 };
-  const ROT = { square: Math.PI / 4, triangle: -Math.PI / 2, pentagon: -Math.PI / 2, hexagon: 0, circle: 0 };
+  const SIDES = { square: 4, triangle: 3, pentagon: 5, hexagon: 6, circle: 48, octagon: 8 };
+  const ROT = { square: Math.PI / 4, triangle: -Math.PI / 2, pentagon: -Math.PI / 2, hexagon: 0, circle: 0, octagon: Math.PI / 8 };
+  // Custom outlines, drawn upright (y up as seen on screen), normalised to area 1.
+  const CUSTOM = (() => {
+    // Centre on the outline's own centroid (so shapes scale about their middle), then scale to area 1.
+    const norm = (ring) => {
+      const [cx, cy] = centroid([[ring]]), a = ringArea(ring), k = 1 / Math.sqrt(a);
+      return ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k]);
+    };
+    const star = [];
+    for (let i = 0; i < 10; i++) { const r = i % 2 ? 0.46 : 1, t = Math.PI / 2 + (i * Math.PI) / 5; star.push([r * Math.cos(t), r * Math.sin(t)]); }
+    const w = 0.19;
+    const cross = [[-w, -0.5], [w, -0.5], [w, -w], [0.5, -w], [0.5, w], [w, w], [w, 0.5], [-w, 0.5], [-w, w], [-0.5, w], [-0.5, -w], [-w, -w]];
+    const heart = [];
+    for (let i = 0; i < 48; i++) {
+      const t = (i / 48) * Math.PI * 2;
+      heart.push([16 * Math.pow(Math.sin(t), 3), 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)]);
+    }
+    return { star: norm(star), cross: norm(cross), heart: norm(heart) };
+  })();
+  // Screen "up" on the ground is (-x, -z) and screen "right" is (+x, -z) for this camera.
+  const toWorld = (hx, hy) => [(hx - hy) * Math.SQRT1_2, (-hx - hy) * Math.SQRT1_2];
   function regular(kind, a, cx, cz) {
+    if (CUSTOM[kind]) {
+      const k = Math.sqrt(a);
+      return [[CUSTOM[kind].map(([hx, hy]) => { const [x, z] = toWorld(hx * k, hy * k); return [(cx || 0) + x, (cz || 0) + z]; })]];
+    }
     const n = SIDES[kind];
     const R = Math.sqrt((2 * a) / (n * Math.sin((2 * Math.PI) / n)));
     const ring = [];
@@ -937,7 +964,11 @@ window.Ads = (function () {
       else {
         // Keep the shape: the biggest copy that fits inside the overlap.
         const [ox, oz] = centroid(overlap);
-        const fit = fitShape(runShape, top.area, overlap, [[ox, oz], [top.cx + dx / 2, top.cz + dz / 2]]);
+        // Try anchors along the slide (and a little to each side); concave shapes like the heart need the wider search.
+        const centres = [[ox, oz]];
+        const px = -dz * 0.35, pz = dx * 0.35;
+        for (const t of [0.25, 0.5, 0.75]) for (const q of (CUSTOM[runShape] ? [-1, 0, 1] : [0])) centres.push([top.cx + dx * t + px * q, top.cz + dz * t + pz * q]);
+        const fit = fitShape(runShape, top.area, overlap, centres);
         if (!fit || fit.area < 0.05) {
           addDebris(dropped, y, color, m.axis, sign);
           return gameOver('miss');
@@ -1080,15 +1111,21 @@ window.Ads = (function () {
 
   // ---------- menu ----------
   function glyphPath(kind) {
+    if (CUSTOM[kind]) {
+      const r = CUSTOM[kind], m = Math.max(...r.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y))));
+      return 'M' + r.map(([x, y]) => (x / m * 0.9).toFixed(3) + ' ' + (-y / m * 0.9).toFixed(3)).join('L') + 'Z';
+    }
     const ring = regular(kind, kind === 'square' ? 1.28 : 1.6, 0, 0)[0][0];
     return 'M' + ring.map(([x, z]) => x.toFixed(3) + ' ' + z.toFixed(3)).join('L') + 'Z';
   }
   const LOCK_SVG = '<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg>';
   const MODE_ORDER = ['endless', 'time', 'daily'];
-  const pickerHTML = SHAPES.map((s) =>
-    '<button type="button" class="shape" role="radio" data-shape="' + s + '" aria-label="' + SHAPE_NAMES[s] + '">' +
+  // The carousel loops: three copies of the shapes; the middle copy is the real one, the outer copies let it wrap around.
+  const pickerHTML = [0, 1, 2].map((copy) => SHAPES.map((s) =>
+    '<button type="button" class="shape" role="radio" data-shape="' + s + '" data-copy="' + copy + '" aria-label="' + SHAPE_NAMES[s] + '"' +
+    (copy === 1 ? '' : ' aria-hidden="true" tabindex="-1"') + '>' +
     '<svg class="g" viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" d="' + glyphPath(s) + '"/></svg>' +
-    '<span>' + SHAPE_NAMES[s] + '</span>' + LOCK_SVG + '</button>').join('');
+    '<span>' + SHAPE_NAMES[s] + '</span>' + LOCK_SVG + '</button>').join('')).join('');
   document.querySelectorAll('[data-picker]').forEach((el) => { el.innerHTML = pickerHTML; });
   const shapeBtns = document.querySelectorAll('.shape');
   const segBtns = document.querySelectorAll('.seg-btn');
@@ -1175,8 +1212,8 @@ window.Ads = (function () {
 
   // ---------- shape carousel: the chosen shape sits in the middle; swipe or tap to move ----------
   const pickers = document.querySelectorAll('[data-picker]');
-  function centerOn(scroller, s, smooth) {
-    const el = scroller.querySelector('[data-shape="' + s + '"]');
+  function centerOn(scroller, s, smooth, target) {
+    const el = target || scroller.querySelector('[data-shape="' + s + '"][data-copy="1"]');
     if (!el) return;
     scroller.scrollTo({ left: el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' });
   }
@@ -1201,7 +1238,7 @@ window.Ads = (function () {
     pickers.forEach((p) => {
       const active = p.closest('.page').dataset.page === mode;
       const n = nearest(p);
-      if (!active || !p._scrolling) { if (!n || n.dataset.shape !== shape) { p._programmatic = true; centerOn(p, shape, false); } }
+      if (!p._scrolling && (!n || n.dataset.shape !== shape || n.dataset.copy !== '1')) { p._programmatic = true; centerOn(p, shape, false); }
       styleCarousel(p);
     });
   }
@@ -1220,7 +1257,10 @@ window.Ads = (function () {
       t = setTimeout(() => {
         p._scrolling = false;
         if (p.closest('.page').dataset.page !== mode || p._programmatic) { p._programmatic = false; return; } // only the visible carousel picks a shape
-        const n = nearest(p); if (n) selectShape(n.dataset.shape);
+        const n = nearest(p);
+        if (!n) return;
+        if (n.dataset.copy !== '1') { p._programmatic = true; centerOn(p, n.dataset.shape, false); styleCarousel(p); } // wrap back to the middle copy, invisibly
+        selectShape(n.dataset.shape);
       }, 110);
     }, { passive: true });
   });
@@ -1245,7 +1285,7 @@ window.Ads = (function () {
     reset(); renderMenu();
   }
   segBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-  shapeBtns.forEach((b) => b.addEventListener('click', () => { centerOn(b.parentElement, b.dataset.shape, true); selectShape(b.dataset.shape); }));
+  shapeBtns.forEach((b) => b.addEventListener('click', () => { centerOn(b.parentElement, b.dataset.shape, true, b); selectShape(b.dataset.shape); }));
   document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => { initAudio(); onPlay(); }));
   $('week').addEventListener('click', () => openCalendar());
   $('week').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCalendar(); } });
