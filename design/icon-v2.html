@@ -21,7 +21,20 @@ const BGS = {
   5: 'linear-gradient(180deg, hsl(245 50% 18%), hsl(275 50% 14%))',                         // night sky (+ dots)
   6: 'linear-gradient(180deg, hsl(28 90% 86%), hsl(350 70% 74%))'                           // light, the game's menu palette
 };
-document.body.style.background = BGS[bg];
+// Streetwear palette mode: ?rose=1..8 overrides background and tower colors.
+const PINK = '#ff206e', LEMON = '#fbff12', TURQ = '#41ead4', BLK = '#121212', WHT = '#ffffff';
+const ROSE = {
+  1: { bg: `linear-gradient(180deg, #232323, ${BLK})`, star: [LEMON, '#fffbb0'], heart: ['#b3134c', PINK], circle: ['#1fae9c', TURQ] },
+  2: { bg: `linear-gradient(160deg, ${PINK}, #8a0f3c)`, star: [LEMON, WHT], heart: [WHT, '#ffd1e1'], circle: ['#1fae9c', TURQ] },
+  3: { bg: `linear-gradient(180deg, ${LEMON}, #f0f05a)`, star: [BLK, '#3a3a3a'], heart: ['#c4124f', PINK], circle: ['#139684', TURQ] },
+  4: { bg: `linear-gradient(180deg, ${TURQ}, #128f80)`, star: [LEMON, WHT], heart: ['#c4124f', PINK], circle: [BLK, '#3a3a3a'] },
+  5: { bg: `linear-gradient(180deg, ${PINK} 0%, #ff7a3d 55%, ${LEMON} 100%)`, star: [WHT, '#fffde0'], heart: ['#6a0a2b', '#b3134c'], circle: ['#139684', TURQ] },
+  6: { bg: `linear-gradient(180deg, ${TURQ} 0%, #8f7bd8 50%, ${PINK} 100%)`, star: [LEMON, WHT], heart: [WHT, '#ffe0ec'], circle: [BLK, '#333'] },
+  7: { bg: `radial-gradient(circle at 55% 40%, #3b0f24 0%, ${BLK} 70%)`, star: [LEMON, WHT], heart: ['#b3134c', PINK], circle: ['#1fae9c', TURQ] },
+  8: { bg: `linear-gradient(180deg, ${BLK} 0%, #2a0a18 60%, ${PINK} 130%)`, star: [TURQ, '#bff8f0'], heart: [LEMON, '#fffbb0'], circle: [PINK, '#ff8fb5'] }
+};
+const rose = ROSE[q.get('rose')];
+document.body.style.background = rose ? rose.bg : BGS[bg];
 if (bg === '5') {
   // a few soft "stars" in the sky, fixed positions so every render is identical
   const pts = [[12,10,3],[28,22,2],[44,7,2.5],[70,12,3],[86,26,2],[18,38,2],[90,6,2.5],[60,30,1.8],[8,58,2],[93,48,2.2],[35,14,1.6],[78,40,1.6]];
@@ -74,14 +87,16 @@ const mat = (h, s, l) => new THREE.MeshLambertMaterial({ color: new THREE.Color(
 // A tower like real play: most drops perfect, a few misses where the block shrinks and shifts.
 // misses: {layerIndex: [shrink, dx, dz]}; hue ramps from h0 (bottom) to h1 (top).
 function tower(kind, x, z, layers, h0, h1, scale, misses = {}, sink = 0) {
+  const rc = rose && (rose[kind] || rose.star);
+  const hexMat = (t, dl) => new THREE.MeshLambertMaterial({ color: new THREE.Color(rc[0]).lerp(new THREE.Color(rc[1]), t).offsetHSL(0, 0, dl) });
   const g = new THREE.Group();
-  const base = new THREE.Mesh(layerGeo(kind), mat(h0, 0.65, 0.5));
+  const base = new THREE.Mesh(layerGeo(kind), rc ? hexMat(0, -0.08) : mat(h0, 0.65, 0.5));
   base.scale.set(scale, 40, scale); base.position.y = -40; g.add(base);
   let s = scale, ox = 0, oz = 0;
   for (let i = 0; i < layers; i++) {
     if (misses[i]) { const [k, dx, dz] = misses[i]; s *= k; ox += dx; oz += dz; }
     const t = layers > 1 ? i / (layers - 1) : 1;
-    const m = new THREE.Mesh(layerGeo(kind), mat(h0 + (h1 - h0) * t, 0.78, 0.56 + t * 0.08 + (i % 2 ? 0.025 : 0)));
+    const m = new THREE.Mesh(layerGeo(kind), rc ? hexMat(t, i % 2 ? 0.02 : 0) : mat(h0 + (h1 - h0) * t, 0.78, 0.56 + t * 0.08 + (i % 2 ? 0.025 : 0)));
     m.scale.set(s, 1, s); m.position.set(ox, i, oz); g.add(m);
   }
   g.rotation.y = Math.PI / 4;

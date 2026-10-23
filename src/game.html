@@ -934,26 +934,59 @@ window.Ads = (function () {
   const PALETTE = 'pastel';
   // Every palette changes color the same way as the tower grows (6 degrees of hue per block,
   // a full cycle every 60 blocks); they differ only in how vivid the blocks and background are.
+  const PINK = '#ff206e', LEMON = '#fbff12', TURQ = '#41ead4';
   const PALETTES = {
     pastel:  { name: 'Pastel',     s: 0.62, l: 0.62, step: 6, bg: [60, 86, 48, 64], off: 35 },
     vivid:   { name: 'Vivid',      s: 0.85, l: 0.56, step: 6, bg: [78, 74, 66, 54], off: 35 },
     candy:   { name: 'Candy',      s: 0.95, l: 0.62, step: 6, bg: [90, 84, 78, 68], off: 35 },
     bold:    { name: 'Bold',       s: 0.9,  l: 0.52, step: 6, bg: [82, 62, 76, 42], off: 35 },
     neon:    { name: 'Neon night', s: 0.98, l: 0.58, step: 6, bg: [55, 22, 60, 11], off: 35 },
-    jewel:   { name: 'Jewel',      s: 0.8,  l: 0.47, step: 6, bg: [50, 30, 55, 15], off: 35 }
+    jewel:   { name: 'Jewel',      s: 0.8,  l: 0.47, step: 6, bg: [50, 30, 55, 15], off: 35 },
+    // Streetwear palette: electric pink, lemon, turquoise (+ black and white). Blocks blend between the
+    // stops as the tower grows (one full loop every `period` blocks); bg: 'noir' | 'dusk' | 'pop' | [top, bottom].
+    roseNoir:     { name: 'Rose · noir',          stops: [PINK, LEMON, TURQ], period: 36, bg: 'noir' },
+    roseDusk:     { name: 'Rose · dusk',          stops: [PINK, LEMON, TURQ], period: 36, bg: 'dusk' },
+    rosePop:      { name: 'Rose · pop',           stops: [PINK, LEMON, TURQ], period: 36, bg: 'pop', ink: '#141414' },
+    roseElectric: { name: 'Rose · pink+turquoise', stops: [PINK, TURQ], period: 24, bg: ['#141414', '#3a0d22'] },
+    roseLemon:    { name: 'Rose · on lemon',      stops: [PINK, TURQ, '#1b1b1b'], period: 30, bg: [LEMON, '#f7f7c8'], ink: '#141414' },
+    roseAqua:     { name: 'Rose · on turquoise',  stops: [PINK, LEMON, '#ffffff'], period: 30, bg: [TURQ, '#0f6d63'] },
+    roseHot:      { name: 'Rose · on pink',       stops: [LEMON, TURQ, '#ffffff'], period: 30, bg: [PINK, '#5a0a26'] },
+    roseSunrise:  { name: 'Rose · sunrise',       stops: [TURQ, '#ffffff', PINK], period: 30, bg: ['#ff5d95', LEMON] }
   };
   const devPalettes = !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   let pal = PALETTES[PALETTE];
   if (devPalettes) { try { const k = localStorage.getItem('ss_dev_palette'); if (PALETTES[k]) pal = PALETTES[k]; } catch (e) {} }
   function applyBgVars() {
+    if (pal.ink) document.documentElement.style.setProperty('--ink', pal.ink); else document.documentElement.style.removeProperty('--ink');
+    if (pal.stops) return;
     const st = document.documentElement.style, [s1, l1, s2, l2] = pal.bg;
     st.setProperty('--bg1s', s1 + '%'); st.setProperty('--bg1l', l1 + '%');
     st.setProperty('--bg2s', s2 + '%'); st.setProperty('--bg2l', l2 + '%'); st.setProperty('--bgoff', pal.off);
   }
   applyBgVars();
-  const hueAt = (lvl) => (hueBase + lvl * pal.step) % 360;
-  const colorAt = (lvl) => new THREE.Color().setHSL(hueAt(lvl) / 360, pal.s, pal.l);
-  function setBg(lvl) { document.documentElement.style.setProperty('--h', Math.round(hueAt(lvl + 8))); }
+  const hueAt = (lvl) => (hueBase + lvl * (pal.step || 6)) % 360;
+  // Color of a point on the stop loop: t counts blocks, starting where this round's random hue lands.
+  function stopColor(t) {
+    const n = pal.stops.length, u = (((t / pal.period) % 1) + 1) % 1 * n, i = Math.floor(u);
+    return new THREE.Color(pal.stops[i % n]).lerp(new THREE.Color(pal.stops[(i + 1) % n]), u - i);
+  }
+  const stopT = (lvl) => (hueBase / 360) * pal.period + lvl;
+  const colorAt = (lvl) => pal.stops ? stopColor(stopT(lvl)) : new THREE.Color().setHSL(hueAt(lvl) / 360, pal.s, pal.l);
+  function setBg(lvl) {
+    document.documentElement.style.setProperty('--h', Math.round(hueAt(lvl + 8)));
+    const body = document.body;
+    if (!pal.stops) { body.style.background = ''; return; }
+    let top, bottom;
+    if (Array.isArray(pal.bg)) [top, bottom] = pal.bg;
+    else {
+      // the colour half a loop away from the top block, so the tower always contrasts with the sky
+      const opp = stopColor(stopT(lvl) + pal.period / 2), k = new THREE.Color(pal.bg === 'pop' ? 0xffffff : 0x000000);
+      if (pal.bg === 'noir') { top = '#1c1c1c'; bottom = '#050505'; }
+      else if (pal.bg === 'dusk') { top = '#' + opp.clone().lerp(k, 0.72).getHexString(); bottom = '#' + opp.clone().lerp(k, 0.4).getHexString(); }
+      else { top = '#' + opp.clone().lerp(k, 0.55).getHexString(); bottom = '#' + opp.clone().lerp(k, 0.15).getHexString(); }
+    }
+    body.style.background = `linear-gradient(180deg, ${top}, ${bottom})`;
+  }
   function setPalette(key) {
     pal = PALETTES[key]; applyBgVars();
     try { localStorage.setItem('ss_dev_palette', key); } catch (e) {}
