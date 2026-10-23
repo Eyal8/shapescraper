@@ -3,6 +3,11 @@ name: Android release (Play Store bundle)
 # Run from the Actions tab. Produces a signed .aab to upload to Google Play.
 on:
   workflow_dispatch:
+    inputs:
+      real_ads:
+        description: 'Show real ads (only for the public store release; test builds use Google test ads)'
+        type: boolean
+        default: false
 
 jobs:
   bundle:
@@ -17,7 +22,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
-      - run: ADS_TEST=false npm run build && npx cap sync android
+      - run: ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build && npx cap sync android
       - name: Restore upload key
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/upload.jks"
       - name: Build signed bundle

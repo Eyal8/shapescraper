@@ -1316,11 +1316,7 @@ window.Ads = (function () {
     if (busy) return;
     const rec = dayRec(calSel), isToday = calSel === dayKey();
     if (!isToday && !rec.unlocked && !rec.played && !(window.Store && window.Store.noAds())) {
-      busy = true;
-      let ok = false;
-      try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
-      busy = false;
-      if (!ok) return;
+      if (!(await rewarded())) return;
       rec.unlocked = true; saveDay(calSel, rec);
     }
     $('calendar').hidden = true;
@@ -1363,11 +1359,13 @@ window.Ads = (function () {
     renderMenu();
   }
 
+  // Shows a rewarded ad; if none could be shown or it was closed early, says so instead of failing silently.
   async function rewarded() {
     busy = true;
     let ok = false;
     try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
     busy = false;
+    if (!ok) showPopup('No ad available right now. Try again in a moment.', 2200);
     return ok;
   }
   async function onPlay() {
@@ -1487,7 +1485,7 @@ window.Ads = (function () {
     if (!offerArgs || busy) return;
     stopOffer();
     const ok = await rewarded();
-    if (!ok) { declineOffer(); return; }
+    if (!ok) { setTimeout(declineOffer, 1600); return; }
     offerArgs = null;
     $('offer').hidden = true;
     continued = true;

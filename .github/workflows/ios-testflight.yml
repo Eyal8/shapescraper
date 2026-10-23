@@ -4,6 +4,11 @@ name: iOS release (TestFlight)
 # App Store Connect API key, and uploads to TestFlight. No Mac needed.
 on:
   workflow_dispatch:
+    inputs:
+      real_ads:
+        description: 'Show real ads (only for the public store release; test builds use Google test ads)'
+        type: boolean
+        default: false
 
 jobs:
   testflight:
@@ -21,7 +26,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: ADS_TEST=false npm run build && npx cap sync ios
+      - run: ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build && npx cap sync ios
       - name: Install API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
