@@ -136,7 +136,7 @@ button { font: inherit; color: inherit; }
 .daily-goal { display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 12px; border-radius: 16px; background: var(--chip); border: 1px solid var(--chip-line); }
 .daily-goal svg { width: 34px; height: 34px; flex: none; }
 .daily-goal .glyph { fill: var(--ink); }
-.daily-goal b { display: block; font: 800 15px/1.2 var(--display); }
+.daily-goal b { display: block; font: 800 16px/1.2 var(--display); }
 .daily-goal span { font-size: 12px; color: var(--ink-soft); }
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .wk { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 10px; color: var(--ink-dim); text-transform: uppercase; }
@@ -228,6 +228,30 @@ button { font: inherit; color: inherit; }
 #adSim p { margin: 0; color: rgba(255,255,255,0.7); font-size: 13px; line-height: 1.5; }
 #adClose { pointer-events: auto; }
 #adClose:disabled { opacity: 0.4; }
+/* menu pages: three equal-height pages side by side; the track slides between them */
+.pages { width: 100%; overflow: hidden; touch-action: pan-y; }
+.track { display: flex; transition: transform 0.38s cubic-bezier(.3,.8,.3,1); }
+.page { flex: 0 0 100%; min-width: 0; box-sizing: border-box; padding: 2px; display: flex; flex-direction: column; gap: 12px; }
+.page-main { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.page .play { margin-top: auto; min-height: 62px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 10px; }
+.page-main, .page-lock { min-height: 172px; }
+.best { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; }
+.best .big { font-size: 34px; }
+.best .sub { font-size: 12px; color: var(--ink-soft); text-wrap: balance; }
+.page-lock { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
+.lock-badge { width: 48px; height: 48px; border-radius: 50%; background: var(--chip); border: 1px solid var(--chip-line); display: grid; place-items: center; }
+.lock-badge .lock { width: 20px; height: 20px; }
+.lock-title { font: 800 18px var(--display); }
+.lock-line { font-size: 12px; color: var(--ink-soft); text-wrap: balance; max-width: 260px; }
+.meter { width: min(220px, 80%); height: 6px; border-radius: 999px; background: rgba(255,255,255,0.14); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--gold); border-radius: inherit; }
+.daily-goal .goal-text { flex: 1; min-width: 0; }
+.daily-goal .goal-text span { display: block; margin-top: 2px; text-wrap: balance; }
+.streak-pill { flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(255,209,102,0.16); color: var(--gold); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.daily-top .link-btn { padding: 0; font-size: 11px; }
+.week { cursor: pointer; }
+.cal-detail span { display: block; text-wrap: balance; }
+p, .info, .label, .celebrate-title { text-wrap: balance; }
 @media (max-height: 720px) { .panel h1 { font-size: 30px; } .card { gap: 9px; padding: 12px; } .tagline { display: none; } }
 @media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check { animation: none; } }
 </style>
@@ -242,23 +266,54 @@ button { font: inherit; color: inherit; }
   <div class="panel" id="menu">
     <h1>Shape<br>scraper</h1>
     <div class="tagline">Stack &amp; Slice</div>
-    <div class="card">
+    <div class="card" id="menuCard">
       <div class="seg" role="radiogroup" aria-label="Game mode">
         <button type="button" class="seg-btn" role="radio" data-mode="endless">Endless</button>
         <button type="button" class="seg-btn" role="radio" data-mode="time">Time Attack</button>
         <button type="button" class="seg-btn" role="radio" data-mode="daily">Daily</button>
       </div>
-      <div class="shapes" id="shapes" role="radiogroup" aria-label="Shape"></div>
-      <div class="daily-box" id="dailyBox" hidden>
-        <div class="daily-top"><span class="label" id="dailyDate"></span><span class="label" id="dailyStreak"></span></div>
-        <div class="daily-goal"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div><b id="dailyGoal"></b><span id="dailyBest"></span></div></div>
-        <div class="week" id="week"></div>
-      </div>
-      <p id="modeInfo"></p>
-      <div class="actions">
-        <button type="button" class="btn primary" id="playBtn">Play</button>
-        <button type="button" class="btn" id="calBtn" hidden>Calendar</button>
-      </div>
+      <div class="pages"><div class="track" id="track">
+      <section class="page" data-page="endless" aria-label="Endless">
+        <div class="page-main">
+          <div class="shapes" data-picker role="radiogroup" aria-label="Shape"></div>
+          <div class="best"><span class="label" data-best-label>Best</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span></div>
+        </div>
+        <div class="page-lock" hidden>
+          <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
+          <div class="lock-title" data-lock-title></div>
+          <div class="lock-line" data-lock-line></div>
+          <div class="meter"><i data-lock-meter></i></div>
+        </div>
+        <button type="button" class="btn primary play" data-play>Play</button>
+      </section>
+      <section class="page" data-page="time" aria-label="Time Attack">
+        <div class="page-main">
+          <div class="shapes" data-picker role="radiogroup" aria-label="Shape"></div>
+          <div class="best"><span class="label" data-best-label>Best in 60 seconds</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span></div>
+        </div>
+        <div class="page-lock" hidden>
+          <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
+          <div class="lock-title" data-lock-title></div>
+          <div class="lock-line" data-lock-line></div>
+          <div class="meter"><i data-lock-meter></i></div>
+        </div>
+        <button type="button" class="btn primary play" data-play>Play</button>
+      </section>
+      <section class="page" data-page="daily" aria-label="Daily">
+        <div class="page-main">
+          <div class="daily-top"><span class="label" id="dailyDate"></span><button type="button" class="link-btn" id="calBtn">Calendar</button></div>
+          <div class="daily-goal"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div class="goal-text"><b id="dailyShape"></b><span id="dailyGoal"></span></div><span class="streak-pill" id="dailyStreak" hidden></span></div>
+          <div class="week" id="week" role="button" tabindex="0" aria-label="Open calendar"></div>
+        </div>
+        <div class="page-lock" hidden>
+          <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
+          <div class="lock-title" data-lock-title></div>
+          <div class="lock-line" data-lock-line></div>
+          <div class="meter"><i data-lock-meter></i></div>
+        </div>
+        <button type="button" class="btn primary play" data-play>Play today</button>
+      </section>
+      </div></div>
     </div>
     <div class="row">
       <button type="button" class="link-btn" id="noAdsBtn">Remove ads</button>
@@ -315,7 +370,8 @@ button { font: inherit; color: inherit; }
     <div class="cal-legend"><span><i class="lg-done"></i>Complete</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span></div>
     <div class="cal-detail">
       <b id="calDayTitle"></b>
-      <span class="info" id="calDayInfo"></span>
+      <span class="info" id="calDayGoal"></span>
+      <span class="label" id="calDayStatus"></span>
       <button type="button" class="btn primary" id="calPlay">Play</button>
     </div>
   </div>
@@ -560,9 +616,10 @@ window.Ads = (function () {
   const RANGE = 7;         // how far moving blocks travel
   const PERFECT = 0.14;    // snap tolerance
   const MIN_SCORE_TO_CONTINUE = 5;
-  const UNLOCK_SCORE = 15; // best Endless score in one shape that unlocks the next
+  // Best Endless score in the previous shape that unlocks each shape; it rises as you go. Any shape or mode can also be unlocked with a rewarded ad.
+  const UNLOCK_AT = { circle: 20, triangle: 25, pentagon: 30, hexagon: 35 };
   const TIME_START = 60, TIME_BONUS = 2, TIME_CONTINUE = 15;
-  const TIME_UNLOCK = 10;      // best Endless score (any shape) that opens Time Attack
+  const MODE_UNLOCK = { daily: 10, time: 20 }; // best Endless score (any shape) that opens each mode
   const DAILY_HISTORY = 60;    // how many past days the calendar offers
   const PC = window.polygonClipping;
 
@@ -600,17 +657,15 @@ window.Ads = (function () {
   function isUnlocked(s) {
     if (s === 'square' || unlockedSet().includes(s)) return true;
     const prev = SHAPES[SHAPES.indexOf(s) - 1];
-    return bestOf('endless', prev) >= UNLOCK_SCORE;
+    return bestOf('endless', prev) >= UNLOCK_AT[s];
   }
   function unlock(s) { const u = unlockedSet(); if (!u.includes(s)) { u.push(s); store.set('ss_unlocked', u); } }
   const endlessBestAny = () => Math.max(...SHAPES.map((s) => bestOf('endless', s)));
   function modeUnlocked(m) {
-    if (m === 'daily') return (store.get('ss_games', 0) || 0) >= 1;
-    if (m === 'time') return endlessBestAny() >= TIME_UNLOCK;
-    return true;
+    if (m === 'endless') return true;
+    return store.get('ss_modes_unlocked', []).includes(m) || endlessBestAny() >= MODE_UNLOCK[m];
   }
-  const modeLockText = (m) => m === 'daily' ? 'Finish one Endless game to open the Daily challenge.'
-    : 'Reach ' + TIME_UNLOCK + ' in any Endless shape to open Time Attack (best ' + endlessBestAny() + ').';
+  function unlockMode(m) { const u = store.get('ss_modes_unlocked', []); if (!u.includes(m)) { u.push(m); store.set('ss_modes_unlocked', u); } }
 
   // ---------- daily: same shape, tower and goal for everyone, keyed by local date ----------
   function mulberry32(a) {
@@ -912,15 +967,16 @@ window.Ads = (function () {
       else sub.textContent = 'Perfects ' + perfects + ' / ' + g.n;
     } else {
       const next = SHAPES[SHAPES.indexOf(runShape) + 1];
-      sub.textContent = next && !isUnlocked(next) ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK_SCORE : '';
+      sub.textContent = next && !isUnlocked(next) && score < UNLOCK_AT[next] ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK_AT[next] : '';
     }
     sub.hidden = state !== 'playing' || !sub.textContent;
   }
 
   // ---------- unlocks ----------
   function checkUnlock() {
-    if (mode !== 'endless' || score !== UNLOCK_SCORE) return;
+    if (mode !== 'endless') return;
     const next = SHAPES[SHAPES.indexOf(runShape) + 1];
+    if (!next || score !== UNLOCK_AT[next]) return;
     if (next && !unlockedSet().includes(next) && !isUnlockedByScoreSoFar(next)) {
       unlock(next); newlyUnlocked = next;
       showPopup(SHAPE_NAMES[next] + ' unlocked!', 1600);
@@ -997,15 +1053,17 @@ window.Ads = (function () {
     return 'M' + ring.map(([x, z]) => x.toFixed(3) + ' ' + z.toFixed(3)).join('L') + 'Z';
   }
   const LOCK_SVG = '<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg>';
-  const shapesEl = $('shapes');
-  shapesEl.innerHTML = SHAPES.map((s) =>
+  const MODE_ORDER = ['endless', 'time', 'daily'];
+  const pickerHTML = SHAPES.map((s) =>
     '<button type="button" class="shape" role="radio" data-shape="' + s + '" aria-label="' + SHAPE_NAMES[s] + '">' +
-    '<svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" d="' + glyphPath(s) + '"/></svg>' +
+    '<svg class="g" viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" d="' + glyphPath(s) + '"/></svg>' +
     '<span>' + SHAPE_NAMES[s] + '</span>' + LOCK_SVG + '</button>').join('');
-  const shapeBtns = shapesEl.querySelectorAll('.shape');
+  document.querySelectorAll('[data-picker]').forEach((el) => { el.innerHTML = pickerHTML; });
+  const shapeBtns = document.querySelectorAll('.shape');
   const segBtns = document.querySelectorAll('.seg-btn');
-
+  const pageEl = (m) => document.querySelector('.page[data-page="' + m + '"]');
   const adNote = () => (window.Store && window.Store.noAds()) ? 'Ad-free' : 'Watch a short ad';
+
   function weekStrip() {
     const today = new Date(); today.setHours(12, 0, 0, 0);
     const start = new Date(today); start.setDate(today.getDate() - today.getDay());
@@ -1018,14 +1076,28 @@ window.Ads = (function () {
     }
     return html;
   }
+
+  function renderLock(page, m) {
+    const best = endlessBestAny(), need = MODE_UNLOCK[m];
+    page.querySelector('[data-lock-title]').textContent = MODES[m] + ' is locked';
+    page.querySelector('[data-lock-line]').textContent = 'Reach ' + need + ' in any Endless shape. Your best: ' + best + '.';
+    page.querySelector('[data-lock-meter]').style.width = Math.min(100, (best / need) * 100) + '%';
+  }
+
   function renderMenu() {
+    $('track').style.transform = 'translateX(' + (-MODE_ORDER.indexOf(mode) * 100) + '%)';
     segBtns.forEach((b) => {
-      const un = modeUnlocked(b.dataset.mode);
-      b.setAttribute('aria-checked', String(b.dataset.mode === mode));
+      const m = b.dataset.mode, un = modeUnlocked(m);
+      b.setAttribute('aria-checked', String(m === mode));
       b.classList.toggle('locked', !un);
       const lock = b.querySelector('.lock');
       if (!un && !lock) b.insertAdjacentHTML('beforeend', LOCK_SVG);
       if (un && lock) lock.remove();
+    });
+    MODE_ORDER.forEach((m) => {
+      const page = pageEl(m), current = m === mode;
+      page.inert = !current;
+      page.setAttribute('aria-hidden', String(!current));
     });
     shapeBtns.forEach((b) => {
       const s = b.dataset.shape, un = isUnlocked(s);
@@ -1034,35 +1106,38 @@ window.Ads = (function () {
       b.setAttribute('aria-checked', String(s === shape));
       b.setAttribute('aria-label', SHAPE_NAMES[s] + (un ? '' : ', locked'));
     });
-    const play = $('playBtn'), info = $('modeInfo'), daily = mode === 'daily';
-    shapesEl.hidden = daily;
-    $('dailyBox').hidden = !daily || !modeUnlocked('daily');
-    $('calBtn').hidden = !daily || !modeUnlocked('daily');
-    play.disabled = false;
-    if (!modeUnlocked(mode)) {
-      info.textContent = modeLockText(mode);
-      play.textContent = 'Locked';
-      play.disabled = true;
-    } else if (daily) {
-      const key = dayKey(), cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
-      $('dailyDate').textContent = fmtDay(key);
-      $('dailyStreak').textContent = st ? 'Streak ' + st : 'No streak yet';
-      $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
-      $('dailyGoal').textContent = SHAPE_NAMES[cfg.shape] + ' · ' + goalText(cfg);
-      $('dailyBest').textContent = rec.done ? 'Complete · best ' + rec.best + ' floors' : rec.played ? 'Best so far: ' + rec.perf + ' perfects' : 'New today';
-      $('week').innerHTML = weekStrip();
-      info.textContent = '';
-      play.textContent = rec.done ? 'Play again for a high score' : 'Play today';
-    } else if (!isUnlocked(shape)) {
-      const prev = SHAPES[SHAPES.indexOf(shape) - 1];
-      info.textContent = SHAPE_NAMES[shape] + ' is locked. Reach ' + UNLOCK_SCORE + ' in ' + SHAPE_NAMES[prev] + ' Endless (best ' + bestOf('endless', prev) + '), or unlock it now.';
-      play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>' + adNote() + '</small>';
-    } else {
-      const b = bestOf(mode, shape);
-      info.textContent = (mode === 'time' ? '60 seconds. Every perfect drop adds 2 seconds. ' : SHAPE_FEEL[shape] + ' ') + 'Best ' + b + '.';
-      play.textContent = 'Play';
-    }
-    info.hidden = !info.textContent;
+    ['endless', 'time', 'daily'].forEach((m) => {
+      const page = pageEl(m), un = modeUnlocked(m), play = page.querySelector('[data-play]');
+      page.querySelector('.page-main').hidden = !un;
+      page.querySelector('.page-lock').hidden = un;
+      if (!un) { renderLock(page, m); play.innerHTML = 'Unlock ' + MODES[m] + '<small>' + adNote() + '</small>'; return; }
+      if (m === 'daily') {
+        const key = dayKey(), cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
+        $('dailyDate').textContent = fmtDay(key);
+        $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
+        $('dailyShape').textContent = SHAPE_NAMES[cfg.shape];
+        $('dailyGoal').textContent = rec.done ? 'Complete · best ' + rec.best : goalText(cfg);
+        $('dailyStreak').textContent = st + (st === 1 ? ' day' : ' days');
+        $('dailyStreak').hidden = !st;
+        $('week').innerHTML = weekStrip();
+        play.textContent = rec.done ? 'Play again' : 'Play today';
+        return;
+      }
+      const label = page.querySelector('[data-best-label]'), big = page.querySelector('[data-best]'), sub = page.querySelector('[data-best-sub]');
+      if (!isUnlocked(shape)) {
+        const prev = SHAPES[SHAPES.indexOf(shape) - 1];
+        label.textContent = SHAPE_NAMES[shape] + ' is locked';
+        big.textContent = bestOf('endless', prev) + ' / ' + UNLOCK_AT[shape];
+        sub.textContent = 'Your best in ' + SHAPE_NAMES[prev] + ' Endless';
+        sub.hidden = false;
+        play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>' + adNote() + '</small>';
+      } else {
+        label.textContent = m === 'time' ? 'Best in 60 seconds' : 'Best';
+        big.textContent = bestOf(m, shape);
+        sub.hidden = true;
+        play.textContent = 'Play';
+      }
+    });
     renderStoreLinks();
   }
   function renderStoreLinks() {
@@ -1073,8 +1148,38 @@ window.Ads = (function () {
     $('restoreBtn').hidden = !!owned || !(st && st.isNative);
   }
   document.addEventListener('store:change', () => { if (state === 'menu') renderMenu(); });
-  segBtns.forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; runDate = null; store.set('ss_mode2', mode); renderMenu(); reset(); }));
-  shapeBtns.forEach((b) => b.addEventListener('click', () => { shape = b.dataset.shape; store.set('ss_shape', shape); renderMenu(); reset(); }));
+
+  // Switching modes slides the pages and turns the tower a quarter turn.
+  let spin = null;
+  function setMode(m) {
+    if (m === mode || busy) return;
+    const dir = Math.sign(MODE_ORDER.indexOf(m) - MODE_ORDER.indexOf(mode)) || 1;
+    const from = spin ? spin.to : world.rotation.y;
+    spin = { from: world.rotation.y, to: from + dir * Math.PI / 2, t: 0 };
+    mode = m; runDate = null; store.set('ss_mode2', mode);
+    reset(); renderMenu();
+  }
+  segBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  shapeBtns.forEach((b) => b.addEventListener('click', () => { if (shape === b.dataset.shape) return; shape = b.dataset.shape; store.set('ss_shape', shape); renderMenu(); reset(); }));
+  document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => { initAudio(); onPlay(); }));
+  $('week').addEventListener('click', () => openCalendar());
+  $('week').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCalendar(); } });
+  // Swipe left / right on the menu card to change mode.
+  let swipe = null;
+  $('menuCard').addEventListener('pointerdown', (e) => { swipe = { x: e.clientX, y: e.clientY }; });
+  $('menuCard').addEventListener('pointerup', (e) => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    const i = MODE_ORDER.indexOf(mode) + (dx < 0 ? 1 : -1);
+    if (i >= 0 && i < MODE_ORDER.length) setMode(MODE_ORDER[i]);
+  });
+  $('menuCard').addEventListener('pointercancel', () => { swipe = null; });
+  document.querySelector('.seg').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const i = MODE_ORDER.indexOf(mode) + (e.key === 'ArrowRight' ? 1 : -1);
+    if (i >= 0 && i < MODE_ORDER.length) { setMode(MODE_ORDER[i]); segBtns[i].focus(); }
+  });
 
   // ---------- calendar ----------
   let calMonth = new Date(), calSel = dayKey();
@@ -1114,10 +1219,10 @@ window.Ads = (function () {
     // selected day
     const cfg = dailyConfig(calSel), rec = dayRec(calSel), isToday = calSel === max;
     $('calDayTitle').textContent = (isToday ? 'Today · ' : '') + fmtDay(calSel, { weekday: 'long', month: 'short', day: 'numeric' });
-    let t = SHAPE_NAMES[cfg.shape] + ' · ' + goalText(cfg) + '. ';
-    t += rec.done ? 'Complete. Best ' + rec.best + ' floors, ' + rec.perf + ' perfects.' : rec.played ? 'Not complete yet. Best ' + rec.perf + ' perfects.' : 'Not played yet.';
-    if (!isToday && !rec.done) t += ' Past days count on the calendar but not toward your streak.';
-    $('calDayInfo').textContent = t;
+    $('calDayGoal').textContent = SHAPE_NAMES[cfg.shape] + ' · ' + goalText(cfg);
+    $('calDayStatus').textContent = rec.done ? 'Complete · best ' + rec.best + ' · ' + rec.perf + ' perfects'
+      : rec.played ? 'Not complete · ' + rec.perf + ' / ' + cfg.goal.n + ' perfects'
+      : isToday ? 'Not played yet' : 'Not played · past days don’t count toward streaks';
     const cp = $('calPlay');
     if (isToday || rec.unlocked || rec.played || (window.Store && window.Store.noAds())) cp.innerHTML = rec.done ? 'Play again' : 'Play';
     else cp.innerHTML = 'Unlock this day<small>' + adNote() + '</small>';
@@ -1173,8 +1278,20 @@ window.Ads = (function () {
     renderMenu();
   }
 
+  async function rewarded() {
+    busy = true;
+    let ok = false;
+    try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
+    busy = false;
+    return ok;
+  }
   async function onPlay() {
-    if (busy || !modeUnlocked(mode)) return;
+    if (busy) return;
+    if (!modeUnlocked(mode)) {
+      if (await rewarded()) { unlockMode(mode); showPopup(MODES[mode] + ' unlocked!', 1400); celebrate(false); }
+      renderMenu();
+      return;
+    }
     if (mode === 'daily') runDate = dayKey();
     if (mode !== 'daily' && !isUnlocked(shape)) {
       busy = true;
@@ -1255,6 +1372,7 @@ window.Ads = (function () {
   }
 
   function start() {
+    if (spin) { world.rotation.y = spin.to; spin = null; }
     reset();
     state = 'playing';
     menuEl.hidden = true; overEl.hidden = true; scoreEl.hidden = false;
@@ -1332,7 +1450,6 @@ window.Ads = (function () {
     $('mute').textContent = muted ? 'OFF' : 'SND';
     store.set('ts_muted', muted ? 1 : 0);
   });
-  $('playBtn').addEventListener('click', () => { initAudio(); onPlay(); });
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
   $('continueBtn').addEventListener('click', () => { initAudio(); continueRun(); });
   $('menuBtn').addEventListener('click', () => { if (!busy) { runDate = null; showMenu(); } });
@@ -1348,6 +1465,12 @@ window.Ads = (function () {
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    if (spin) {
+      spin.t = Math.min(1, spin.t + dt / (reduceMotion ? 0.01 : 0.6));
+      const e = 1 - Math.pow(1 - spin.t, 3);
+      world.rotation.y = spin.from + (spin.to - spin.from) * e;
+      if (spin.t >= 1) spin = null;
+    }
 
     if (state === 'playing') {
       if (moving) {
@@ -1409,8 +1532,9 @@ window.Ads = (function () {
       start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
-      unlockAll() { SHAPES.forEach(unlock); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(TIME_UNLOCK, bestOf('endless', 'square'))); renderMenu(); },
+      unlockAll() { SHAPES.forEach(unlock); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, bestOf('endless', 'square'))); renderMenu(); },
       calendar() { openCalendar(); },
+      setMode(m) { setMode(m); },
       playDate(k) { mode = 'daily'; runDate = k; start(); },
       seedDays(obj) { store.set('ss_days', obj); },
       get perfects() { return perfects; },
