@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>@font-face{font-family:"Unbounded";font-weight:800;src:url(../node_modules/@fontsource/unbounded/files/unbounded-latin-800-normal.woff2) format("woff2")}</style>
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:linear-gradient(180deg,hsl(28 90% 86%),hsl(350 70% 74%))}
+body.transparent{background:transparent}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+h1{position:fixed;left:6%;top:50%;transform:translateY(-50%);margin:0;color:#fff;font:800 64px/0.95 "Unbounded","Arial Black",sans-serif;text-shadow:0 3px 18px rgba(20,24,40,.25)}
+h1 small{display:block;margin-top:14px;font-size:20px;letter-spacing:.14em;text-transform:uppercase}
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<script src="../node_modules/three/build/three.min.js"></script>
+<script>
+// modes: icon (square, full bleed), fg (transparent, padded for adaptive icon), feature (1024x500 banner), splash
+const q = new URLSearchParams(location.search);
+const mode = q.get('mode') || 'icon';
+const HUE = 195;
+document.body.style.setProperty('--h', 18);
+if (mode === 'fg') document.body.classList.add('transparent');
+const canvas = document.getElementById('c');
+const W = innerWidth, Hh = innerHeight;
+const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setPixelRatio(1); r.setSize(W, Hh, false);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(5, 14, 3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.22); fill.position.set(-8, 3, -2); scene.add(fill);
+const geo = new THREE.BoxGeometry(1, 1, 1);
+const box = (w, h, d, x, y, z, lvl, dl) => {
+  const c = new THREE.Color().setHSL(((HUE + lvl * 13) % 360) / 360, 0.62, 0.62 + (dl || 0));
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: c }));
+  m.scale.set(w, h, d); m.position.set(x, y, z); scene.add(m); return m;
+};
+const S = 3.2, n = mode === 'feature' ? 9 : 7;
+box(S, 30, S, 0, -15.5, 0, 0, -0.12);
+let w = S, d = S, x = 0, z = 0;
+const cuts = [0, 0, 0.45, 0, 0.3, 0, 0, 0.25, 0];
+for (let i = 0; i < n; i++) {
+  if (cuts[i]) { if (i % 2) { w -= cuts[i]; x += cuts[i] / 2; } else { d -= cuts[i]; z += cuts[i] / 2; } }
+  box(w, 1, d, x, i, z, i);
+}
+// the next block, sliding in from the side
+const topLvl = n;
+if (n % 2) box(w, 1, d, x - 2.6, topLvl, z, topLvl); else box(w, 1, d, x, topLvl, z - 2.6, topLvl);
+// a sliced piece falling
+const f = box(0.7, 1, d * 0.8, x + w / 2 + 1.1, n - 3.4, z + 0.3, n - 1);
+f.rotation.z = -0.35; f.rotation.y = 0.25;
+
+const aspect = W / Hh;
+const view = { icon: 15.5, fg: 21, feature: 14, splash: 24 }[mode] || 14;
+const cam = new THREE.OrthographicCamera(-view * aspect / 2, view * aspect / 2, view / 2, -view / 2, 0.1, 300);
+const cy = n / 2 + (mode === 'icon' || mode === 'fg' ? 0.2 : 0);
+cam.position.set(12, cy + 12, 12); cam.lookAt(0, cy, 0);
+if (mode === 'feature') { cam.left -= 6; cam.right -= 6; cam.updateProjectionMatrix(); cam.left += 0; }
+if (mode === 'feature') { const off = -view * aspect * 0.22; cam.left = -view*aspect/2 + off; cam.right = view*aspect/2 + off; cam.updateProjectionMatrix(); document.write('<h1>Shape<br>scraper<small>Stack &amp; Slice</small></h1>'); }
+r.render(scene, cam);
+document.title = 'ready';
+</script>
+</body></html>

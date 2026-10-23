@@ -1,0 +1,27 @@
+{
+  "name": "shapescraper",
+  "version": "1.0.0",
+  "description": "Shapescraper mobile game (Capacitor + AdMob)",
+  "main": "index.js",
+  "scripts": {
+    "build": "node scripts/build-web.js",
+    "sync": "npm run build && npx cap sync",
+    "android": "npm run sync && npx cap open android",
+    "ios": "npm run sync && npx cap open ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor-community/admob": "^8.2.1",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource/unbounded": "^5.3.0",
+    "three": "^0.128.0"
+  },
+  "private": true
+}
