@@ -21,7 +21,18 @@ def api(method, path):
         body = r.read()
         return json.loads(body) if body else None
 
-certs = api("GET", "/v1/certificates?limit=200&fields[certificates]=name,displayName,certificateType,expirationDate")["data"]
+# Apple's API occasionally hiccups; retry, and never fail the build over housekeeping.
+certs = None
+for attempt in range(4):
+    try:
+        certs = api("GET", "/v1/certificates?limit=200&fields[certificates]=name,displayName,certificateType,expirationDate")["data"]
+        break
+    except Exception as e:
+        print(f"::warning::listing certificates failed (attempt {attempt + 1}): {e}")
+        time.sleep(5 * (attempt + 1))
+if certs is None:
+    print("::warning::skipping certificate cleanup this run")
+    sys.exit(0)
 now = datetime.datetime.now(datetime.timezone.utc)
 revoked = 0
 for c in certs:
