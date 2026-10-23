@@ -79,7 +79,7 @@ button { font: inherit; color: inherit; }
   opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
 }
 #popup.show { opacity: 1; transform: none; }
-#popup.gold { font-weight: 800; text-shadow: 0 2px 16px rgba(20,24,40,0.45); }
+#popup.gold { padding: 6px 14px; border-radius: 999px; font-weight: 800; color: #fff; background: rgba(20,23,40,0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-shadow: none; }
 #hint {
   position: fixed; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom)); transform: translateX(-50%);
   padding: 10px 18px; border-radius: 999px; background: rgba(20,23,40,0.35); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
@@ -190,7 +190,7 @@ button { font: inherit; color: inherit; }
   text-decoration: underline; text-underline-offset: 3px; text-shadow: 0 1px 8px rgba(20,24,40,0.5);
 }
 .row { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
-.seg-btn:focus-visible, .shape:focus-visible, .btn:focus-visible, .link-btn:focus-visible, #mute:focus-visible, .day:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.seg-btn:focus-visible, .shape:focus-visible, .btn:focus-visible, .link-btn:focus-visible, .tog:focus-visible, .day:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .offer-ring { position: relative; width: 112px; height: 112px; }
 .offer-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .offer-ring circle { fill: none; stroke-width: 7; }
@@ -211,14 +211,17 @@ button { font: inherit; color: inherit; }
 #banner .bglyph { display: block; width: 44px; height: 44px; margin: 0 auto 8px; }
 #banner .bglyph path { fill: var(--gold); }
 @keyframes stamp { from { transform: scale(0.2) rotate(-25deg); opacity: 0; } to { transform: none; opacity: 1; } }
-#mute {
-  position: fixed; pointer-events: auto; z-index: 5;
+#toggles {
+  position: fixed; z-index: 5; display: flex; flex-direction: column; gap: 10px;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   right: max(16px, env(safe-area-inset-right, 0px));
-  width: 44px; height: 44px; border-radius: 50%;
-  background: var(--card); border: 1px solid var(--card-line); color: var(--ink);
-  font: 500 11px var(--mono); letter-spacing: 0.06em; cursor: pointer;
 }
+.tog {
+  pointer-events: auto; width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+  background: var(--card); border: 1px solid var(--card-line); color: var(--ink); cursor: pointer;
+}
+.tog svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tog[aria-pressed="false"] { opacity: 0.6; }
 /* calendar */
 #calendar {
   position: fixed; inset: 0; z-index: 12; display: flex; align-items: flex-end; justify-content: center;
@@ -442,7 +445,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   </div>
 </div>
 
-<button id="mute" type="button" aria-label="Toggle sound">SND</button>
+<div id="toggles"><button id="mute" class="tog" type="button" aria-label="Sound" aria-pressed="true"></button><button id="hapt" class="tog" type="button" aria-label="Vibration" aria-pressed="true"></button></div>
 <div id="adSim" hidden role="dialog" aria-label="Test ad">
   <div class="adbox">
     <span class="label">Test ad</span>
@@ -1870,7 +1873,18 @@ window.Ads = (function () {
   // ---------- audio + haptics ----------
   let ac = null;
   let muted = !!store.get('ts_muted', 0);
-  $('mute').textContent = muted ? 'OFF' : 'SND';
+  let hapticsOn = store.get('ss_haptics', 1) !== 0;
+  const ICONS = {
+    soundOn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+    soundOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+    hapticOn: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4.5 9v6M19.5 9v6M2 11v2M22 11v2"/></svg>',
+    hapticOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4 4l16 16"/></svg>'
+  };
+  function renderToggles() {
+    $('mute').innerHTML = muted ? ICONS.soundOff : ICONS.soundOn; $('mute').setAttribute('aria-pressed', String(!muted));
+    $('hapt').innerHTML = hapticsOn ? ICONS.hapticOn : ICONS.hapticOff; $('hapt').setAttribute('aria-pressed', String(hapticsOn));
+  }
+  renderToggles();
   function initAudio() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; }
@@ -1892,6 +1906,7 @@ window.Ads = (function () {
   const Haptics = isApp && capx ? window.capacitorExports.registerPlugin('Haptics') : null;
   const Review = isApp && capx ? window.capacitorExports.registerPlugin('InAppReview') : null;
   function buzz(p, kind) {
+    if (!hapticsOn) return;
     try {
       if (Haptics) {
         if (kind === 'slice') Haptics.impact({ style: 'LIGHT' });
@@ -1936,9 +1951,12 @@ window.Ads = (function () {
     if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); onTap(); }
   });
   $('mute').addEventListener('click', () => {
-    muted = !muted;
-    $('mute').textContent = muted ? 'OFF' : 'SND';
-    store.set('ts_muted', muted ? 1 : 0);
+    muted = !muted; store.set('ts_muted', muted ? 1 : 0); renderToggles();
+    if (!muted) { initAudio(); tone(660, 0.08, 'sine', 0.12); }
+  });
+  $('hapt').addEventListener('click', () => {
+    hapticsOn = !hapticsOn; store.set('ss_haptics', hapticsOn ? 1 : 0); renderToggles();
+    buzz(15, 'perfect'); // a tap to confirm it is on
   });
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
   $('tryNewBtn').addEventListener('click', () => {
