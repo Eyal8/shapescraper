@@ -6,17 +6,15 @@ out = root / 'store'
 url = f'file://{root}/www/index.html#shots'
 PLAY = """async ({n, perfectTail, offs}) => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  window.__ts.start();
+  window.__ts.start('shift');
   for (let i = 0; i < n; i++) {
-    const m = window.__ts.moving, t = window.__ts.top, a = m.axis;
     const tail = i >= n - perfectTail;
-    const off = tail ? 0 : offs[i % offs.length];
-    m[a] = t[a] + off;
+    window.__ts.setOff(tail ? 0 : offs[i % offs.length]);
     window.__ts.place();
     await wait(tail ? 160 : 25);
   }
 }"""
-OFFS = [0, 0.18, 0, 0, -0.12, 0, 0.1, 0, 0, -0.15, 0, 0]
+OFFS = [0, 0.18, 0, 0, -0.12, 0, 0, 0.1, 0, 0, -0.15, 0, 0]
 devices = {'iphone': dict(viewport={'width': 430, 'height': 932}, device_scale_factor=3),
            'android': dict(viewport={'width': 360, 'height': 640}, device_scale_factor=3)}
 with sync_playwright() as p:
@@ -32,13 +30,13 @@ with sync_playwright() as p:
                 pg.evaluate(PLAY, {'n': n - tail, 'perfectTail': 0, 'offs': OFFS})
                 pg.wait_for_timeout(1500)
                 pg.evaluate("""async (k) => { const w = ms => new Promise(r => setTimeout(r, ms));
-                  for (let i = 0; i < k; i++) { const m = window.__ts.moving, t = window.__ts.top; m[m.axis] = t[m.axis]; window.__ts.place(); await w(130); } }""", tail)
+                  for (let i = 0; i < k; i++) { window.__ts.setOff(0); window.__ts.place(); await w(130); } }""", tail)
                 pg.wait_for_timeout(250)
             else:
                 pg.evaluate(PLAY, {'n': n, 'perfectTail': 0, 'offs': OFFS})
                 pg.wait_for_timeout(1800)
             if over:
-                pg.evaluate("() => { const m = window.__ts.moving, t = window.__ts.top; m[m.axis] = t[m.axis] + 20; window.__ts.place(); }")
+                pg.evaluate("() => { window.__ts.setOff(6.9); window.__ts.place(); }")
                 pg.wait_for_timeout(2500)
             pg.screenshot(path=str(out / f'{name}-{shot}.png'))
             print('wrote', name, shot)

@@ -9,6 +9,9 @@ let game = fs.readFileSync(path.join(root, 'src/game.html'), 'utf8');
 const cdn = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
 if (!game.includes(cdn)) throw new Error('three.js CDN tag not found in src/game.html');
 game = game.replace(`<script src="${cdn}"></script>`, '<script src="capacitor.js"></script>\n<script src="three.min.js"></script>');
+const clipCdn = 'https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js';
+if (!game.includes(clipCdn)) throw new Error('polygon-clipping CDN tag not found in src/game.html');
+game = game.replace(`<script src="${clipCdn}"></script>`, '<script src="polygon-clipping.min.js"></script>');
 
 // Use bundled fonts so the app works offline
 game = game.replace(/<link rel="preconnect"[^>]*>\n?/, '').replace(/<link rel="stylesheet" href="https:\/\/fonts.googleapis.com[^>]*>/,
@@ -38,6 +41,7 @@ ${game}
 `;
 fs.writeFileSync(path.join(www, 'index.html'), html);
 fs.copyFileSync(path.join(root, 'node_modules/three/build/three.min.js'), path.join(www, 'three.min.js'));
+fs.copyFileSync(path.join(root, 'node_modules/polygon-clipping/dist/polygon-clipping.umd.min.js'), path.join(www, 'polygon-clipping.min.js'));
 fs.copyFileSync(path.join(root, 'node_modules/@capacitor/core/dist/capacitor.js'), path.join(www, 'capacitor.js'));
 const fonts = path.join(www, 'fonts');
 fs.mkdirSync(fonts, { recursive: true });
