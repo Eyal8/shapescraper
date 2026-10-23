@@ -432,7 +432,7 @@ window.Store = (function () {
   const platform = cap && cap.getPlatform ? cap.getPlatform() : 'web';
   const native = platform === 'android' || platform === 'ios';
   const NP = native && window.capacitorExports ? window.capacitorExports.registerPlugin('NativePurchases') : null;
-  let noAds = false, price = '$2.99';
+  let noAds = false, price = '$3.99';
   try { noAds = localStorage.getItem('ss_noads') === '1'; } catch (e) {}
 
   function set(v) {
@@ -1332,7 +1332,7 @@ window.Ads = (function () {
   window.addEventListener('resize', () => syncCarousels());
   function renderStoreLinks() {
     const st = window.Store, owned = st && st.noAds();
-    $('noAdsBtn').textContent = owned ? 'Ads removed' : 'Remove ads · ' + (st ? st.price() : '$2.99');
+    $('noAdsBtn').textContent = owned ? 'Ads removed' : 'Remove ads · ' + (st ? st.price() : '$3.99');
     $('noAdsBtn').disabled = !!owned;
     $('noAdsBtn').style.textDecoration = owned ? 'none' : '';
     $('restoreBtn').hidden = !!owned || !(st && st.isNative);
