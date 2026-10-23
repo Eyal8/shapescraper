@@ -1,0 +1,108 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<script src="../node_modules/three/build/three.min.js"></script>
+<script>
+// Icon concepts. ?v=A..F
+const v = new URLSearchParams(location.search).get('v') || 'A';
+const BG = {
+  A: ['hsl(28 90% 86%)', 'hsl(350 70% 74%)'],
+  B: ['hsl(190 70% 84%)', 'hsl(265 60% 74%)'],
+  C: ['hsl(28 90% 86%)', 'hsl(350 70% 74%)'],
+  D: ['hsl(250 45% 30%)', 'hsl(300 45% 22%)'],
+  E: ['hsl(160 60% 84%)', 'hsl(200 65% 70%)'],
+  F: ['hsl(45 95% 82%)', 'hsl(15 85% 70%)']
+}[v];
+document.body.style.background = `linear-gradient(180deg, ${BG[0]}, ${BG[1]})`;
+
+const canvas = document.getElementById('c');
+const W = innerWidth, H = innerHeight;
+const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setPixelRatio(1); r.setSize(W, H, false);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(5, 14, 3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.25); fill.position.set(-8, 3, -2); scene.add(fill);
+
+// 2D outlines, roughly unit radius
+function poly(n, rot = -Math.PI / 2, rad = 1) {
+  const s = new THREE.Shape();
+  for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; const p = [Math.cos(a) * rad, Math.sin(a) * rad]; i ? s.lineTo(...p) : s.moveTo(...p); }
+  s.closePath(); return s;
+}
+const SHAPES = {
+  circle: () => { const s = new THREE.Shape(); s.absarc(0, 0, 1, 0, Math.PI * 2, false); return s; },
+  square: () => poly(4, Math.PI / 4, 1.2),
+  triangle: () => poly(3, -Math.PI / 2 - Math.PI / 4, 1.3),
+  hexagon: () => poly(6, 0, 1.08),
+  star: () => {
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 ? 0.55 : 1.3; const p = [Math.cos(a) * rr, Math.sin(a) * rr]; i ? s.lineTo(...p) : s.moveTo(...p); }
+    s.closePath(); return s;
+  },
+  heart: () => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -1.05);
+    s.bezierCurveTo(-0.6, -0.55, -1.25, -0.15, -1.15, 0.4);
+    s.bezierCurveTo(-1.05, 0.95, -0.35, 1.15, 0, 0.6);
+    s.bezierCurveTo(0.35, 1.15, 1.05, 0.95, 1.15, 0.4);
+    s.bezierCurveTo(1.25, -0.15, 0.6, -0.55, 0, -1.05);
+    return s;
+  }
+};
+const geoCache = {};
+function layerGeo(kind) {
+  if (!geoCache[kind]) {
+    const g = new THREE.ExtrudeGeometry(SHAPES[kind](), { depth: 1, bevelEnabled: false, curveSegments: 40 });
+    g.rotateX(-Math.PI / 2); // extrude upward: shape lies in XZ plane, height along +Y
+    geoCache[kind] = g;
+  }
+  return geoCache[kind];
+}
+function tower(kind, x, z, layers, hue, scale, opts = {}) {
+  const group = new THREE.Group();
+  // base column
+  const base = new THREE.Mesh(layerGeo(kind), new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(hue / 360, 0.55, 0.5) }));
+  base.scale.set(scale, 40, scale); base.position.y = -40; group.add(base);
+  for (let i = 0; i < layers; i++) {
+    const c = new THREE.Color().setHSL(((hue + i * 9) % 360) / 360, 0.65, 0.6 + (i % 2 ? 0.03 : 0));
+    const m = new THREE.Mesh(layerGeo(kind), new THREE.MeshLambertMaterial({ color: c }));
+    m.scale.set(scale, 1, scale); m.position.y = i; group.add(m);
+  }
+  if (opts.sliding) {
+    const c = new THREE.Color().setHSL(((hue + layers * 9) % 360) / 360, 0.65, 0.63);
+    const m = new THREE.Mesh(layerGeo(kind), new THREE.MeshLambertMaterial({ color: c }));
+    m.scale.set(scale, 1, scale); m.position.set(opts.sliding[0], layers + 0.15, opts.sliding[1]); group.add(m);
+  }
+  group.position.set(x, 0, z); scene.add(group);
+  return group;
+}
+
+// Camera: isometric-ish orthographic, looking from +x +z
+let view = 15, cy = 4;
+const L = {
+  // A: one tall star tower with a block sliding in (the current idea, with a shape)
+  A: () => { tower('star', 0, 0, 7, 195, 2.4, { sliding: [-2.2, 3.4] }); view = 15; cy = 3.2; },
+  // B: two towers, circle and triangle
+  B: () => { tower('circle', -2.4, 2.4, 5, 30, 2.0); tower('star', 2.4, -2.4, 8, 270, 2.1); view = 15.5; cy = 3.4; },
+  // C: three towers as a staircase: circle, triangle, star
+  C: () => { tower('circle', -3.6, 3.6, 3, 30, 1.7); tower('triangle', 0, 0, 6, 170, 1.8); tower('star', 3.6, -3.6, 9, 270, 1.8); view = 17; cy = 3.4; },
+  // D: same staircase on a dark background (stands out on light home screens)
+  D: () => { tower('circle', -3.6, 3.6, 3, 30, 1.7); tower('triangle', 0, 0, 6, 170, 1.8); tower('star', 3.6, -3.6, 9, 290, 1.8); view = 17; cy = 3.4; },
+  // E: three towers in a row, heart in the middle tallest
+  E: () => { tower('circle', -4.0, 1.4, 4, 40, 1.6); tower('heart', 0, 0, 8, 330, 1.8); tower('star', 4.0, -1.4, 5, 210, 1.7); view = 17; cy = 3.4; },
+  // F: three towers clustered close, staircase, warm palette
+  F: () => { tower('heart', -3.4, 3.4, 4, 330, 1.7); tower('circle', 0, 0, 7, 200, 1.6); tower('star', 3.4, -3.4, 10, 50, 1.8); view = 17; cy = 3.8; }
+};
+L[v]();
+const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
+cam.position.set(11, cy + 19, 11); cam.lookAt(0, cy, 0);
+r.render(scene, cam);
+document.title = 'ready';
+</script>
+</body></html>

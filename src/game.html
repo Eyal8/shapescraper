@@ -70,6 +70,13 @@ button { font: inherit; color: inherit; }
   opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
 }
 #popup.show { opacity: 1; transform: none; }
+#hint {
+  position: fixed; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  padding: 10px 18px; border-radius: 999px; background: rgba(20,23,40,0.35); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  font-family: var(--display); font-weight: 500; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none; animation: hintPulse 1.4s ease-in-out infinite;
+}
+@keyframes hintPulse { 0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(0.97); } 50% { opacity: 1; transform: translateX(-50%) scale(1); } }
 #banner {
   position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%);
   padding: 18px 26px; border-radius: 22px; background: var(--card-strong); border: 1px solid var(--card-line);
@@ -284,6 +291,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   <div id="score" hidden>0</div>
   <div id="sub" hidden></div>
   <div id="popup">Perfect</div>
+  <div id="hint" hidden>Tap anywhere to drop</div>
 
   <div class="panel" id="menu">
     <h1>Shape<br>scraper</h1>
@@ -963,6 +971,7 @@ window.Ads = (function () {
   }
 
   function place() {
+    $('hint').hidden = true;
     const top = topLayer(), m = moving, lvl = m.lvl, y = lvl * H, color = colorAt(lvl);
     const dx = m.axis === 'x' ? m.off : 0, dz = m.axis === 'z' ? m.off : 0;
     const dropped = translate(m.local, top.cx + dx, top.cz + dz);
@@ -982,7 +991,7 @@ window.Ads = (function () {
       else showPopup(combo > 1 ? 'Perfect ×' + combo : 'Perfect');
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
-      buzz(10);
+      buzz(10, 'perfect');
     } else {
       combo = 0;
       const overlap = clip('intersection', top.mp, dropped);
@@ -1007,7 +1016,7 @@ window.Ads = (function () {
       }
       addDebris(clip('difference', dropped, placed), y, color, m.axis, sign);
       tone(196 + score * 3, 0.09, 'triangle', 0.16);
-      buzz(18);
+      buzz(18, 'slice');
     }
 
     stack.push(addLayer(placed, lvl));
@@ -1091,7 +1100,7 @@ window.Ads = (function () {
     celebrate(true);
     showBanner('Daily complete!', runDate === dayKey() ? (streakNow() > 1 ? streakNow() + ' day streak' : 'Keep stacking for a high score') : fmtDay(runDate) + ' stamped');
     tone(784, 0.35, 'sine', 0.2); setTimeout(() => tone(988, 0.4, 'sine', 0.2), 160);
-    buzz([20, 40, 20, 40, 40]);
+    buzz([20, 40, 20, 40, 40], 'success');
     updateSub();
   }
 
@@ -1529,6 +1538,7 @@ window.Ads = (function () {
 
   function gameOver(reason) {
     state = 'over';
+    $('hint').hidden = true;
     overAt = performance.now();
     if (moving) {
       const top = topLayer(), m = moving;
@@ -1536,7 +1546,7 @@ window.Ads = (function () {
       removeMesh(m.mesh); moving = null;
     }
     tone(110, 0.5, 'sawtooth', 0.12);
-    buzz([30, 40, 60]);
+    buzz([30, 40, 60], 'over');
     gamesPlayed++;
     const wasDailyLocked = !modeUnlocked('daily'), wasTimeLocked = !modeUnlocked('time');
     store.set('ss_games', (store.get('ss_games', 0) || 0) + 1);
@@ -1590,6 +1600,7 @@ window.Ads = (function () {
       scoreEl.hidden = true; $('sub').hidden = true; $('offer').hidden = true;
       overEl.hidden = false;
       overAt = performance.now();
+      maybeAskReview(isNew);
     }
   }
 
@@ -1646,6 +1657,7 @@ window.Ads = (function () {
     reset();
     state = 'playing';
     menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
+    $('hint').hidden = (store.get('ss_games', 0) || 0) > 0; // first game only, until the first drop
     spawnMoving();
   }
 
@@ -1676,7 +1688,33 @@ window.Ads = (function () {
       o.start(); o.stop(ac.currentTime + dur);
     } catch (e) {}
   }
-  function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+  // Native haptics in the apps (iOS has no navigator.vibrate); vibration patterns on the web.
+  const capx = window.Capacitor && window.capacitorExports;
+  const isApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const Haptics = isApp && capx ? window.capacitorExports.registerPlugin('Haptics') : null;
+  const Review = isApp && capx ? window.capacitorExports.registerPlugin('InAppReview') : null;
+  function buzz(p, kind) {
+    try {
+      if (Haptics) {
+        if (kind === 'slice') Haptics.impact({ style: 'LIGHT' });
+        else if (kind === 'perfect') Haptics.impact({ style: combo >= 3 ? 'HEAVY' : 'MEDIUM' });
+        else if (kind === 'success') Haptics.notification({ type: 'SUCCESS' });
+        else if (kind === 'over') Haptics.notification({ type: 'ERROR' });
+        return;
+      }
+      if (navigator.vibrate) navigator.vibrate(p);
+    } catch (e) {}
+  }
+
+  // Ask for an App Store / Play rating at a happy moment: a new best of 15+, after 5+ games,
+  // at most once every 30 days and 3 times overall (the stores limit how often the dialog really shows).
+  function maybeAskReview(isNew) {
+    if (!Review || !isNew || score < 15 || (store.get('ss_games', 0) || 0) < 5) return;
+    const r = store.get('ss_review', { n: 0, t: 0 }) || { n: 0, t: 0 };
+    if (r.n >= 3 || Date.now() - r.t < 30 * 864e5) return;
+    store.set('ss_review', { n: r.n + 1, t: Date.now() });
+    setTimeout(() => { if (state === 'over' && !overEl.hidden) { try { Review.requestReview(); } catch (e) {} } }, 1400);
+  }
 
   // ---------- input ----------
   const scoreEl = $('score'), popupEl = $('popup'), menuEl = $('menu'), overEl = $('over');
