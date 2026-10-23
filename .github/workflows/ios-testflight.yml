@@ -33,6 +33,12 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
+      - name: Remove stale cloud-build signing certificates
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey.p8
+        run: |
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography || python3 -m pip install --quiet pyjwt cryptography
+          python3 scripts/clean-dev-certs.py
       - name: Archive
         run: |
           set -o pipefail
