@@ -16,7 +16,11 @@ const BG = {
   C: ['hsl(28 90% 86%)', 'hsl(350 70% 74%)'],
   D: ['hsl(250 45% 30%)', 'hsl(300 45% 22%)'],
   E: ['hsl(160 60% 84%)', 'hsl(200 65% 70%)'],
-  F: ['hsl(45 95% 82%)', 'hsl(15 85% 70%)']
+  F: ['hsl(45 95% 82%)', 'hsl(15 85% 70%)'],
+  G: ['hsl(250 45% 30%)', 'hsl(300 45% 22%)'],
+  H: ['hsl(250 45% 30%)', 'hsl(300 45% 22%)'],
+  I: ['hsl(235 50% 28%)', 'hsl(285 50% 20%)'],
+  J: ['hsl(250 45% 30%)', 'hsl(300 45% 22%)']
 }[v];
 document.body.style.background = `linear-gradient(180deg, ${BG[0]}, ${BG[1]})`;
 
@@ -79,10 +83,12 @@ function tower(kind, x, z, layers, hue, scale, opts = {}) {
     const m = new THREE.Mesh(layerGeo(kind), new THREE.MeshLambertMaterial({ color: c }));
     m.scale.set(scale, 1, scale); m.position.set(opts.sliding[0], layers + 0.15, opts.sliding[1]); group.add(m);
   }
+  group.rotation.y = opts.rotY === undefined ? Math.PI / 4 : opts.rotY; // shapes face the viewer
   group.position.set(x, 0, z); scene.add(group);
   return group;
 }
 
+const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2];
 // Camera: isometric-ish orthographic, looking from +x +z
 let view = 15, cy = 4;
 const L = {
@@ -97,6 +103,14 @@ const L = {
   // E: three towers in a row, heart in the middle tallest
   E: () => { tower('circle', -4.0, 1.4, 4, 40, 1.6); tower('heart', 0, 0, 8, 330, 1.8); tower('star', 4.0, -1.4, 5, 210, 1.7); view = 17; cy = 3.4; },
   // F: three towers clustered close, staircase, warm palette
+  // G: heart tall at the back, circle short front-left, star medium right
+  G: () => { tower('heart', ...at(0.3, -3.2), 9, 330, 1.9); tower('circle', ...at(-4.6, 1.6), 3, 40, 1.6); tower('star', ...at(4.4, 0.4), 6, 200, 1.8); view = 17; cy = 3.6; },
+  // H: star tall at the back, heart medium front-left, circle short right
+  H: () => { tower('star', ...at(0.6, -3.2), 9, 270, 1.9); tower('heart', ...at(-4.4, 0.8), 6, 340, 1.8); tower('circle', ...at(4.6, 1.6), 3, 40, 1.6); view = 17; cy = 3.6; },
+  // I: heart tall on the right, circle medium left, star short in front
+  I: () => { tower('heart', ...at(3.6, -2.0), 9, 335, 1.9); tower('circle', ...at(-3.8, -1.2), 6, 190, 1.6); tower('star', ...at(-0.2, 2.8), 3, 45, 1.75); view = 17; cy = 3.6; },
+  // J: heart tall in the middle-back, star left, circle front-right
+  J: () => { tower('heart', ...at(-0.4, -2.6), 9, 335, 1.9); tower('star', ...at(-4.6, 0.2), 5, 200, 1.75); tower('circle', ...at(3.6, 2.2), 3, 45, 1.6); view = 17; cy = 3.6; },
   F: () => { tower('heart', -3.4, 3.4, 4, 330, 1.7); tower('circle', 0, 0, 7, 200, 1.6); tower('star', 3.4, -3.4, 10, 50, 1.8); view = 17; cy = 3.8; }
 };
 L[v]();
