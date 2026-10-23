@@ -74,20 +74,33 @@ body {
 .big { font-family: var(--display); font-weight: 800; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
 .stats { display: flex; gap: 36px; }
 .stats > div { display: flex; flex-direction: column; gap: 6px; }
-.modes {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-  width: min(340px, 100%); margin-top: 6px;
+.seg {
+  display: flex; width: min(340px, 100%); padding: 3px; margin-top: 6px;
+  background: var(--chip); border: 1px solid var(--chip-line); border-radius: 999px;
 }
-.mode {
-  pointer-events: auto; cursor: pointer; text-align: left;
-  padding: 12px 12px 11px; border-radius: 16px;
+.seg-btn {
+  flex: 1; pointer-events: auto; cursor: pointer; border: 0; background: none; color: var(--ink);
+  font: 500 11px var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 10px 4px; border-radius: 999px; text-shadow: none;
+}
+.seg-btn[aria-checked="true"] { background: var(--ink); color: var(--ink-dark); }
+.shapes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: min(340px, 100%); }
+.shape {
+  pointer-events: auto; cursor: pointer; position: relative; min-width: 0;
+  padding: 10px 2px 7px; border-radius: 14px;
   background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink);
-  font: 800 13px/1.15 var(--display); text-shadow: none;
-  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  font: 500 9px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; text-shadow: none;
 }
-.mode[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--ink-dark); }
-.mode-sub { font: 500 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
-.mode:focus-visible, .btn:focus-visible, #mute:focus-visible, .link-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.shape svg { width: 26px; height: 26px; display: block; }
+.shape .glyph { fill: currentColor; }
+.shape span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shape[aria-checked="true"] { background: var(--ink); color: var(--ink-dark); border-color: var(--ink); }
+.shape.locked .glyph { opacity: 0.35; }
+.shape .lock { position: absolute; top: 5px; right: 5px; width: 11px; height: 11px; }
+.shape .lock path { fill: none; stroke: currentColor; stroke-width: 2.2; }
+.shape .lock rect { fill: currentColor; }
+.seg-btn:focus-visible, .shape:focus-visible, .btn:focus-visible, #mute:focus-visible, .link-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 #modeInfo {
   max-width: 330px; min-height: 2.9em; margin: 0;
   font-size: 13px; line-height: 1.45; letter-spacing: 0.02em; color: var(--ink);
@@ -138,12 +151,12 @@ body {
   <div class="panel" id="menu">
     <h1>Shape<br>scraper</h1>
     <div class="label">Stack &amp; Slice</div>
-    <div class="modes" role="radiogroup" aria-label="Game mode">
-      <button type="button" class="mode" role="radio" data-mode="shift">Shape Shift<span class="mode-sub"></span></button>
-      <button type="button" class="mode" role="radio" data-mode="classic">Classic<span class="mode-sub"></span></button>
-      <button type="button" class="mode" role="radio" data-mode="time">Time Attack<span class="mode-sub"></span></button>
-      <button type="button" class="mode" role="radio" data-mode="daily">Daily<span class="mode-sub"></span></button>
+    <div class="seg" role="radiogroup" aria-label="Game mode">
+      <button type="button" class="seg-btn" role="radio" data-mode="endless">Endless</button>
+      <button type="button" class="seg-btn" role="radio" data-mode="time">Time Attack</button>
+      <button type="button" class="seg-btn" role="radio" data-mode="daily">Daily</button>
     </div>
+    <div class="shapes" id="shapes" role="radiogroup" aria-label="Shape"></div>
     <p id="modeInfo"></p>
     <div class="actions"><button type="button" class="btn primary" id="playBtn">Play</button></div>
     <div class="label">Tap to drop · line it up for perfects</div>
@@ -151,13 +164,14 @@ body {
   </div>
 
   <div class="panel" id="over" hidden>
-    <div class="label" id="overMode">Shape Shift</div>
+    <div class="label" id="overMode">Endless</div>
     <div class="stats">
       <div><span class="label">Score</span><span class="big" id="finalScore">0</span></div>
       <div><span class="label">Best</span><span class="big" id="finalBest">0</span></div>
     </div>
     <div class="label" id="newBest" hidden>New best</div>
     <div class="label" id="overGoal" hidden></div>
+    <div class="label" id="unlockNote" hidden></div>
     <div class="actions">
       <button type="button" class="btn primary" id="continueBtn">Continue from <span id="contScore">0</span><small>Watch a short ad</small></button>
       <button type="button" class="btn" id="againBtn">Play again</button>
@@ -324,6 +338,8 @@ window.Ads = (function () {
   const RANGE = 7;         // how far moving blocks travel
   const PERFECT = 0.14;    // snap tolerance
   const MIN_SCORE_TO_CONTINUE = 5;
+  const UNLOCK_SCORE = 15; // best Endless score in one shape that unlocks the next
+  const TIME_START = 60, TIME_BONUS = 2, TIME_CONTINUE = 15;
   const PC = window.polygonClipping;
 
   const $ = (id) => document.getElementById(id);
@@ -332,29 +348,39 @@ window.Ads = (function () {
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
 
-  // ---------- modes ----------
-  const MODES = {
-    shift:   { name: 'Shape Shift', shapes: true,  timer: false, cont: true,  every: 2,
-               info: 'A new shape every other floor. Land it perfectly to lock in the clean new shape.' },
-    classic: { name: 'Classic',     shapes: false, timer: false, cont: true,
-               info: 'Squares only. Stack as high as you can.' },
-    time:    { name: 'Time Attack', shapes: true,  timer: true,  cont: true,  every: 3,
-               info: '60 seconds on the clock. Every perfect drop adds 2 seconds.' },
-    daily:   { name: 'Daily',       shapes: true,  timer: false, cont: false,
-               info: '' }
+  // ---------- shapes, modes, progress ----------
+  const SHAPES = ['square', 'circle', 'triangle', 'pentagon', 'hexagon'];
+  const SHAPE_NAMES = { square: 'Square', circle: 'Circle', triangle: 'Triangle', pentagon: 'Pentagon', hexagon: 'Hexagon' };
+  const SHAPE_HUE = { square: 200, circle: 330, triangle: 28, pentagon: 145, hexagon: 265 };
+  const SHAPE_FEEL = {
+    square: 'Classic slicing: the overhang is cut off in a straight line.',
+    circle: 'Stays a circle. Every miss shrinks it, so perfects matter.',
+    triangle: 'Stays a triangle. The points punish sloppy drops.',
+    pentagon: 'Stays a pentagon. Five sides, five ways to slip.',
+    hexagon: 'Stays a hexagon. Big, steady and satisfying when it lines up.'
   };
-  const TIME_START = 60, TIME_BONUS = 2, TIME_CONTINUE = 15;
-  let mode = store.get('ss_mode', 'shift');
-  if (!MODES[mode]) mode = 'shift';
+  const MODES = { endless: 'Endless', time: 'Time Attack', daily: 'Daily' };
 
-  const bestKey = (m) => 'ss_best_' + m;
-  function bestOf(m) {
+  let mode = store.get('ss_mode2', 'endless');
+  if (!MODES[mode]) mode = 'endless';
+  let shape = store.get('ss_shape', 'square');
+  if (!SHAPES.includes(shape)) shape = 'square';
+
+  const bestKey = (m, s) => 'ss_best_' + m + '_' + s;
+  function bestOf(m, s) {
     if (m === 'daily') return dailyState().best;
-    const legacy = m === 'classic' ? store.get('ts_best', 0) : 0;
-    return store.get(bestKey(m), legacy) || 0;
+    const legacy = m === 'endless' && s === 'square' ? Math.max(store.get('ss_best_classic', 0) || 0, store.get('ts_best', 0) || 0) : 0;
+    return store.get(bestKey(m, s), legacy) || 0;
   }
+  function unlockedSet() { return store.get('ss_unlocked', ['square']); }
+  function isUnlocked(s) {
+    if (s === 'square' || unlockedSet().includes(s)) return true;
+    const prev = SHAPES[SHAPES.indexOf(s) - 1];
+    return bestOf('endless', prev) >= UNLOCK_SCORE;
+  }
+  function unlock(s) { const u = unlockedSet(); if (!u.includes(s)) { u.push(s); store.set('ss_unlocked', u); } }
 
-  // ---------- seeded randomness (daily) ----------
+  // ---------- daily: same shape, tower and goal for everyone, keyed by local date ----------
   function mulberry32(a) {
     return function () {
       a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -368,32 +394,21 @@ window.Ads = (function () {
     const d = new Date(); d.setDate(d.getDate() + (offset || 0));
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
-  const SHAPE_NAMES = { square: 'Square', circle: 'Circle', triangle: 'Triangle', pentagon: 'Pentagon', hexagon: 'Hexagon' };
-  const PLURAL = { square: 'Squares', circle: 'Circles', triangle: 'Triangles', pentagon: 'Pentagons', hexagon: 'Hexagons' };
-
   function dailyConfig(key) {
-    const r = mulberry32(hashStr('ss-daily-' + key));
-    const pick = (a) => a[Math.floor(r() * a.length)];
-    const only = r() < 0.3 ? pick(['circle', 'triangle', 'pentagon', 'hexagon']) : null;
+    const r = mulberry32(hashStr('ss-daily-v2-' + key));
+    const s = SHAPES[Math.floor(r() * SHAPES.length)];
     const g = r();
     let goal;
     if (g < 0.45) goal = { type: 'floors', n: 15 + Math.floor(r() * 11) };
     else if (g < 0.8) goal = { type: 'perfects', n: 6 + Math.floor(r() * 7) };
     else goal = { type: 'chain', n: 3 + Math.floor(r() * 3) };
-    return {
-      key, goal, only,
-      pool: only ? [only] : ['circle', 'triangle', 'pentagon', 'hexagon', 'square'],
-      every: 2 + Math.floor(r() * 2),
-      hue: Math.floor(r() * 360),
-      seed: hashStr('ss-run-' + key)
-    };
+    return { key, shape: s, goal, hue: Math.floor(r() * 360) };
   }
   function goalText(cfg) {
     const g = cfg.goal;
-    const t = g.type === 'floors' ? 'Reach ' + g.n + ' floors'
+    return g.type === 'floors' ? 'Reach ' + g.n + ' floors'
       : g.type === 'perfects' ? 'Land ' + g.n + ' perfect drops'
       : 'Chain ' + g.n + ' perfects in a row';
-    return cfg.only ? t + ' · ' + PLURAL[cfg.only] + ' only' : t;
   }
   function dailyState() {
     const s = store.get('ss_daily', null);
@@ -407,11 +422,11 @@ window.Ads = (function () {
   // ---------- 2D footprints (multipolygons in x/z) ----------
   const SIDES = { square: 4, triangle: 3, pentagon: 5, hexagon: 6, circle: 48 };
   const ROT = { square: Math.PI / 4, triangle: -Math.PI / 2, pentagon: -Math.PI / 2, hexagon: 0, circle: 0 };
-  function regular(kind, a) {
+  function regular(kind, a, cx, cz) {
     const n = SIDES[kind];
     const R = Math.sqrt((2 * a) / (n * Math.sin((2 * Math.PI) / n)));
     const ring = [];
-    for (let i = 0; i < n; i++) { const t = ROT[kind] + (i * 2 * Math.PI) / n; ring.push([R * Math.cos(t), R * Math.sin(t)]); }
+    for (let i = 0; i < n; i++) { const t = ROT[kind] + (i * 2 * Math.PI) / n; ring.push([(cx || 0) + R * Math.cos(t), (cz || 0) + R * Math.sin(t)]); }
     return [[ring]];
   }
   function ringArea(r) { let a = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1]; return Math.abs(a) / 2; }
@@ -431,7 +446,6 @@ window.Ads = (function () {
   }
   const mapPts = (mp, fn) => mp.map((p) => p.map((r) => r.map(([x, z]) => fn(x, z))));
   const translate = (mp, dx, dz) => mapPts(mp, (x, z) => [x + dx, z + dz]);
-  const scaleAbout = (mp, s, cx, cz) => mapPts(mp, (x, z) => [cx + (x - cx) * s, cz + (z - cz) * s]);
   const clean = (mp) => (mp || []).filter((p) => polyArea(p) > 0.004);
   // Snap to a 1e-4 grid and drop repeated points: near-identical edges trip up the clipper.
   function snap(mp) {
@@ -452,6 +466,22 @@ window.Ads = (function () {
       try { return snap(clean(PC[op](A, snap(translate(b, dx, dz))))); } catch (e) { /* retry with a tiny nudge */ }
     }
     return [];
+  }
+  // Largest copy of `kind` (same orientation) that fits inside `region`, tried at a few centres.
+  function fitShape(kind, maxArea, region, centres) {
+    const regionArea = area(region);
+    let best = null;
+    for (const [cx, cz] of centres) {
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 14; i++) {
+        const s = (lo + hi) / 2;
+        const cand = regular(kind, maxArea * s * s, cx, cz);
+        const outside = area(clip('difference', cand, region));
+        if (outside < 0.0015 * Math.max(regionArea, 0.5)) lo = s; else hi = s;
+      }
+      if (lo > 0.02 && (!best || lo > best.s)) best = { s: lo, cx, cz };
+    }
+    return best ? { mp: regular(kind, maxArea * best.s * best.s, best.cx, best.cz), cx: best.cx, cz: best.cz, area: maxArea * best.s * best.s } : null;
   }
 
   // ---------- three.js setup ----------
@@ -505,47 +535,32 @@ window.Ads = (function () {
   let state = 'menu';
   let stack = [], debris = [], rings = [], moving = null;
   let score = 0, combo = 0, perfects = 0, bestChain = 0, hueBase = 0, camY = 2, overAt = 0;
-  let gamesPlayed = 0, continued = false, busy = false, timeLeft = 0, endReason = '';
-  let rng = Math.random, dcfg = null, shiftKinds = {}, recentKinds = ['square'], dailyJustDone = false;
+  let gamesPlayed = 0, continued = false, busy = false, timeLeft = 0;
+  let runShape = 'square', dcfg = null, dailyJustDone = false, newlyUnlocked = null;
 
   const hueAt = (lvl) => (hueBase + lvl * 6) % 360;
   const colorAt = (lvl) => new THREE.Color().setHSL(hueAt(lvl) / 360, 0.62, 0.62);
   function setBg(lvl) { document.documentElement.style.setProperty('--h', Math.round(hueAt(lvl + 8))); }
   const topLayer = () => stack[stack.length - 1];
 
-  function shiftEvery() { return mode === 'daily' ? dcfg.every : MODES[mode].every; }
-  function isShiftLevel(lvl) { return MODES[mode].shapes && lvl >= 2 && (lvl - 2) % shiftEvery() === 0; }
-  function kindAt(lvl) {
-    if (!(lvl in shiftKinds)) {
-      const pool = mode === 'daily' ? dcfg.pool : ['circle', 'triangle', 'pentagon', 'hexagon', 'square'];
-      // Never repeat the last shape, and avoid the one before it too when the pool allows.
-      const avoid = recentKinds.slice(-(pool.length > 2 ? 2 : 1));
-      const options = pool.filter((k) => !avoid.includes(k));
-      const k = (options.length ? options : pool)[Math.floor(rng() * (options.length || pool.length))];
-      shiftKinds[lvl] = k; recentKinds.push(k);
-    }
-    return shiftKinds[lvl];
-  }
-
-  function addLayer(mp, lvl, kind) {
+  function addLayer(mp, lvl) {
     const [cx, cz] = centroid(mp);
     const mesh = meshFor(mp, cx, cz, colorAt(lvl));
     mesh.position.set(cx, lvl * H, cz);
-    return { mp, cx, cz, kind, mesh };
+    return { mp, cx, cz, area: area(mp), mesh };
   }
 
   function reset() {
     while (world.children.length) removeMesh(world.children[0]);
     stack = []; debris = []; rings = []; moving = null;
-    score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false;
-    shiftKinds = {}; recentKinds = ['square'];
-    if (mode === 'daily') { dcfg = dailyConfig(dayKey()); rng = mulberry32(dcfg.seed); hueBase = dcfg.hue; }
-    else { dcfg = null; rng = Math.random; hueBase = Math.random() * 360; }
+    score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false; newlyUnlocked = null;
+    if (mode === 'daily') { dcfg = dailyConfig(dayKey()); runShape = dcfg.shape; hueBase = dcfg.hue; }
+    else { dcfg = null; runShape = shape; hueBase = SHAPE_HUE[shape] + (Math.random() - 0.5) * 50; }
     timeLeft = TIME_START;
     const ped = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: colorAt(0).offsetHSL(0, -0.1, -0.12) }));
     ped.scale.set(START, 30, START); ped.position.set(0, -H / 2 - 15, 0); world.add(ped);
-    const half = START / 2;
-    stack.push(addLayer([[[[-half, -half], [half, -half], [half, half], [-half, half]]]], 0, 'square'));
+    const first = regular(runShape, runShape === 'square' ? START_AREA : START_AREA * 0.86, 0, 0);
+    stack.push(addLayer(first, 0));
     setBg(0);
     scoreEl.textContent = '0';
   }
@@ -553,16 +568,8 @@ window.Ads = (function () {
   function spawnMoving() {
     const top = topLayer(), lvl = stack.length;
     const axis = lvl % 2 ? 'x' : 'z';
-    let kind = top.kind, local;
-    if (isShiftLevel(lvl) && kindAt(lvl) !== top.kind) {
-      kind = kindAt(lvl);
-      local = regular(kind, Math.max(area(top.mp), 0.8));
-    } else {
-      local = translate(top.mp, -top.cx, -top.cz);
-    }
-    const [lx, lz] = centroid(local);
-    local = translate(local, -lx, -lz);
-    moving = { axis, kind, local, lvl, off: -RANGE, dir: 1, shift: kind !== top.kind };
+    const local = translate(top.mp, -top.cx, -top.cz);
+    moving = { axis, local, lvl, off: -RANGE, dir: 1 };
     moving.mesh = meshFor(local, 0, 0, colorAt(lvl));
     moving.mesh.position.set(top.cx + (axis === 'x' ? moving.off : 0), lvl * H, top.cz + (axis === 'z' ? moving.off : 0));
     updateSub();
@@ -571,6 +578,7 @@ window.Ads = (function () {
   const speed = () => Math.min(4 + score * 0.14, 11.5);
 
   function addDebris(mp, y, color, axis, sign) {
+    if (!mp.length) return;
     const [cx, cz] = centroid(mp);
     const mesh = meshFor(mp, cx, cz, color);
     mesh.position.set(cx, y, cz);
@@ -580,49 +588,64 @@ window.Ads = (function () {
 
   function place() {
     const top = topLayer(), m = moving, lvl = m.lvl, y = lvl * H, color = colorAt(lvl);
-    const wx = top.cx + (m.axis === 'x' ? m.off : 0), wz = top.cz + (m.axis === 'z' ? m.off : 0);
-    const dropped = translate(m.local, wx, wz);
+    const dx = m.axis === 'x' ? m.off : 0, dz = m.axis === 'z' ? m.off : 0;
+    const dropped = translate(m.local, top.cx + dx, top.cz + dz);
     const sign = Math.sign(m.off) || 1;
     removeMesh(m.mesh);
     moving = null;
 
-    const inter = clip('intersection', top.mp, dropped);
-    if (!inter.length || area(inter) < 0.03) {
-      addDebris(dropped, y, color, m.axis, sign);
-      return gameOver('miss');
-    }
-
     let placed;
-    // Shape changes get a slightly wider perfect window, since the outlines don't match.
-    if (Math.abs(m.off) < (m.shift ? PERFECT * 1.7 : PERFECT)) {
+    if (Math.abs(m.off) < PERFECT) {
       combo++; perfects++; bestChain = Math.max(bestChain, combo);
-      placed = m.shift ? translate(m.local, top.cx, top.cz) : top.mp; // clean shape, centred on the floor below
-      if (combo >= 3 && area(placed) < START_AREA) {
-        const [cx, cz] = centroid(placed);
-        placed = scaleAbout(placed, Math.min(Math.sqrt(1.07), Math.sqrt(START_AREA / area(placed))), cx, cz);
+      placed = top.mp;
+      if (combo >= 3 && top.area < START_AREA * (runShape === 'square' ? 1 : 0.86)) {
+        const grown = Math.min(top.area * 1.07, START_AREA * (runShape === 'square' ? 1 : 0.86));
+        placed = runShape === 'square' ? growRect(top.mp, Math.sqrt(grown / top.area)) : regular(runShape, grown, top.cx, top.cz);
       }
       if (mode === 'time') { timeLeft += TIME_BONUS; showPopup((combo > 1 ? 'Perfect ×' + combo : 'Perfect') + ' · +' + TIME_BONUS + 's'); }
-      else showPopup(m.shift ? SHAPE_NAMES[m.kind] + '!' : combo > 1 ? 'Perfect ×' + combo : 'Perfect');
+      else showPopup(combo > 1 ? 'Perfect ×' + combo : 'Perfect');
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
       buzz(10);
     } else {
       combo = 0;
-      placed = inter;
-      const cut = clip('difference', dropped, top.mp);
-      if (cut.length) addDebris(cut, y, color, m.axis, sign);
+      const overlap = clip('intersection', top.mp, dropped);
+      if (!overlap.length || area(overlap) < 0.03) {
+        addDebris(dropped, y, color, m.axis, sign);
+        return gameOver('miss');
+      }
+      if (runShape === 'square') placed = overlap;
+      else {
+        // Keep the shape: the biggest copy that fits inside the overlap.
+        const [ox, oz] = centroid(overlap);
+        const fit = fitShape(runShape, top.area, overlap, [[ox, oz], [top.cx + dx / 2, top.cz + dz / 2]]);
+        if (!fit || fit.area < 0.05) {
+          addDebris(dropped, y, color, m.axis, sign);
+          return gameOver('miss');
+        }
+        placed = fit.mp;
+      }
+      addDebris(clip('difference', dropped, placed), y, color, m.axis, sign);
       tone(196 + score * 3, 0.09, 'triangle', 0.16);
       buzz(18);
     }
 
-    stack.push(addLayer(placed, lvl, m.kind));
+    stack.push(addLayer(placed, lvl));
     score = stack.length - 1;
     scoreEl.textContent = score;
     scoreEl.classList.add('bump');
     setTimeout(() => scoreEl.classList.remove('bump'), 120);
     setBg(lvl);
     checkDailyGoal();
+    checkUnlock();
     spawnMoving();
+  }
+
+  // Grows a rectangle about its centre (square mode grow-back).
+  function growRect(mp, s) {
+    const [cx, cz] = centroid(mp);
+    const lim = START / 2;
+    return mapPts(mp, (x, z) => [Math.max(cx - lim * 2, cx + (x - cx) * s), Math.max(cz - lim * 2, cz + (z - cz) * s)]);
   }
 
   function addRing(mp, y) {
@@ -656,17 +679,25 @@ window.Ads = (function () {
       const g = dcfg.goal, ds = dailyState();
       const have = g.type === 'floors' ? score : g.type === 'perfects' ? perfects : bestChain;
       sub.textContent = ds.done ? 'Daily goal complete' : 'Goal ' + Math.min(have, g.n) + ' / ' + g.n;
-    } else if (MODES[mode].shapes && moving) {
-      if (moving.shift) sub.textContent = 'New shape: ' + SHAPE_NAMES[moving.kind];
-      else {
-        let n = moving.lvl + 1;
-        while (!isShiftLevel(n)) n++;
-        const left = n - moving.lvl;
-        sub.textContent = SHAPE_NAMES[kindAt(n)] + ' in ' + left;
-      }
-    } else sub.textContent = '';
+    } else {
+      const next = SHAPES[SHAPES.indexOf(runShape) + 1];
+      sub.textContent = next && !isUnlocked(next) ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK_SCORE : '';
+    }
     sub.hidden = state !== 'playing' || !sub.textContent;
   }
+
+  // ---------- unlocks ----------
+  function checkUnlock() {
+    if (mode !== 'endless' || score !== UNLOCK_SCORE) return;
+    const next = SHAPES[SHAPES.indexOf(runShape) + 1];
+    if (next && !unlockedSet().includes(next) && !isUnlockedByScoreSoFar(next)) {
+      unlock(next); newlyUnlocked = next;
+      showPopup(SHAPE_NAMES[next] + ' unlocked!', 1600);
+      tone(660, 0.3, 'sine', 0.18);
+    }
+  }
+  // isUnlocked() reads the saved best, which only updates at game over; this avoids a double announcement.
+  function isUnlockedByScoreSoFar(s) { return unlockedSet().includes(s); }
 
   // ---------- daily goal + streak ----------
   function checkDailyGoal() {
@@ -689,28 +720,49 @@ window.Ads = (function () {
   }
 
   // ---------- menu ----------
-  const modeBtns = document.querySelectorAll('.mode');
+  function glyphPath(kind) {
+    const ring = regular(kind, kind === 'square' ? 1.28 : 1.6, 0, 0)[0][0];
+    return 'M' + ring.map(([x, z]) => x.toFixed(3) + ' ' + z.toFixed(3)).join('L') + 'Z';
+  }
+  const LOCK_SVG = '<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg>';
+  const shapesEl = $('shapes');
+  shapesEl.innerHTML = SHAPES.map((s) =>
+    '<button type="button" class="shape" role="radio" data-shape="' + s + '" aria-label="' + SHAPE_NAMES[s] + '">' +
+    '<svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" d="' + glyphPath(s) + '"/></svg>' +
+    '<span>' + SHAPE_NAMES[s] + '</span>' + LOCK_SVG + '</button>').join('');
+  const shapeBtns = shapesEl.querySelectorAll('.shape');
+  const segBtns = document.querySelectorAll('.seg-btn');
+
   function renderMenu() {
-    modeBtns.forEach((b) => {
-      const k = b.dataset.mode;
-      b.setAttribute('aria-checked', String(k === mode));
-      let sub;
-      if (k === 'daily') { const ds = dailyState(); sub = ds.done ? 'Done today' : 'New today'; }
-      else sub = 'Best ' + bestOf(k);
-      b.querySelector('.mode-sub').textContent = sub;
+    segBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+    shapeBtns.forEach((b) => {
+      const s = b.dataset.shape, un = isUnlocked(s);
+      b.classList.toggle('locked', !un);
+      b.querySelector('.lock').style.display = un ? 'none' : '';
+      b.setAttribute('aria-checked', String(s === shape));
+      b.setAttribute('aria-label', SHAPE_NAMES[s] + (un ? '' : ', locked'));
     });
+    shapesEl.hidden = mode === 'daily';
+    const play = $('playBtn');
     if (mode === 'daily') {
       const cfg = dailyConfig(dayKey()), ds = dailyState(), st = streakNow();
-      let t = 'Today: ' + goalText(cfg) + '.';
+      let t = "Today's shape: " + SHAPE_NAMES[cfg.shape] + '. ' + goalText(cfg) + '.';
       if (ds.done) t += ' Done! Best today ' + ds.best + '.';
       if (st > 0) t += ' Streak ' + st + (st === 1 ? ' day.' : ' days.');
       $('modeInfo').textContent = t;
-    } else $('modeInfo').textContent = MODES[mode].info;
+      play.innerHTML = 'Play daily';
+    } else if (!isUnlocked(shape)) {
+      const prev = SHAPES[SHAPES.indexOf(shape) - 1];
+      $('modeInfo').textContent = SHAPE_NAMES[shape] + ' is locked. Reach ' + UNLOCK_SCORE + ' in ' + SHAPE_NAMES[prev] + ' Endless (best ' + bestOf('endless', prev) + '), or unlock it now.';
+      play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>Watch a short ad</small>';
+    } else {
+      const b = bestOf(mode, shape);
+      $('modeInfo').textContent = (mode === 'time' ? '60 seconds. Every perfect drop adds 2 seconds. ' : SHAPE_FEEL[shape] + ' ') + 'Best ' + b + '.';
+      play.innerHTML = 'Play';
+    }
   }
-  modeBtns.forEach((b) => b.addEventListener('click', () => {
-    mode = b.dataset.mode; store.set('ss_mode', mode);
-    renderMenu(); reset();
-  }));
+  segBtns.forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; store.set('ss_mode2', mode); renderMenu(); reset(); }));
+  shapeBtns.forEach((b) => b.addEventListener('click', () => { shape = b.dataset.shape; store.set('ss_shape', shape); renderMenu(); reset(); }));
 
   function showMenu() {
     state = 'menu';
@@ -720,9 +772,24 @@ window.Ads = (function () {
     renderMenu();
   }
 
+  async function onPlay() {
+    if (busy) return;
+    if (mode !== 'daily' && !isUnlocked(shape)) {
+      busy = true;
+      let ok = false;
+      try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
+      busy = false;
+      if (ok) { unlock(shape); showPopup(SHAPE_NAMES[shape] + ' unlocked!', 1400); }
+      renderMenu();
+      return;
+    }
+    start();
+  }
+
+  function modeLabel() { return mode === 'daily' ? 'Daily · ' + SHAPE_NAMES[runShape] : SHAPE_NAMES[runShape] + ' · ' + MODES[mode]; }
+
   function gameOver(reason) {
     state = 'over';
-    endReason = reason;
     overAt = performance.now();
     if (moving) {
       const top = topLayer(), m = moving;
@@ -739,13 +806,13 @@ window.Ads = (function () {
       if (isNew) { ds.best = score; store.set('ss_daily', ds); }
       best = ds.best;
     } else {
-      best = bestOf(mode);
+      best = bestOf(mode, runShape);
       isNew = score > best;
-      if (isNew) { best = score; store.set(bestKey(mode), best); }
+      if (isNew) { best = score; store.set(bestKey(mode, runShape), best); }
     }
-    const canContinue = MODES[mode].cont && !continued && score >= MIN_SCORE_TO_CONTINUE;
+    const canContinue = mode !== 'daily' && !continued && score >= MIN_SCORE_TO_CONTINUE;
     setTimeout(() => {
-      $('overMode').textContent = mode === 'time' && reason === 'time' ? "Time's up" : MODES[mode].name;
+      $('overMode').textContent = mode === 'time' && reason === 'time' ? "Time's up · " + SHAPE_NAMES[runShape] : modeLabel();
       $('finalScore').textContent = score;
       $('finalBest').textContent = best;
       $('newBest').hidden = !(isNew && score > 0);
@@ -755,6 +822,9 @@ window.Ads = (function () {
         og.textContent = ds.done ? (dailyJustDone ? 'Daily goal complete · Streak ' + streakNow() : 'Daily goal done · Streak ' + streakNow()) : 'Goal: ' + goalText(dcfg);
         og.hidden = false;
       } else og.hidden = true;
+      const un = $('unlockNote');
+      un.textContent = newlyUnlocked ? SHAPE_NAMES[newlyUnlocked] + ' unlocked · try it from Change mode' : '';
+      un.hidden = !newlyUnlocked;
       $('contScore').textContent = score;
       $('continueBtn').hidden = !canContinue;
       $('continueBtn').firstChild.textContent = mode === 'time' && reason === 'time' ? '+' + TIME_CONTINUE + ' seconds at ' : 'Continue from ';
@@ -819,7 +889,7 @@ window.Ads = (function () {
   const scoreEl = $('score'), popupEl = $('popup'), menuEl = $('menu'), overEl = $('over');
   function onTap() {
     initAudio();
-    if (state === 'menu') start();
+    if (state === 'menu') onPlay();
     else if (state === 'playing' && moving) place();
     else if (state === 'over' && performance.now() - overAt > 700 && !overEl.hidden && $('continueBtn').hidden) playAgain();
   }
@@ -839,7 +909,7 @@ window.Ads = (function () {
     $('mute').textContent = muted ? 'OFF' : 'SND';
     store.set('ts_muted', muted ? 1 : 0);
   });
-  $('playBtn').addEventListener('click', () => { initAudio(); start(); });
+  $('playBtn').addEventListener('click', () => { initAudio(); onPlay(); });
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
   $('continueBtn').addEventListener('click', () => { initAudio(); continueRun(); });
   $('menuBtn').addEventListener('click', () => { if (!busy) showMenu(); });
@@ -912,13 +982,15 @@ window.Ads = (function () {
   // hook used only to render store screenshots and run automated play tests (open with #shots)
   if (location.hash === '#shots') {
     window.__ts = {
-      start(m) { if (m) { mode = m; store.set('ss_mode', m); } start(); },
+      start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
+      unlockAll() { SHAPES.forEach(unlock); renderMenu(); },
+      menu(m, s) { if (m) mode = m; if (s) shape = s; showMenu(); },
       get moving() { return moving; },
       get state() { return state; },
       get score() { return score; },
-      get layers() { return stack.length; },
+      get topArea() { return topLayer().area; },
       timeLeft(v) { timeLeft = v; }
     };
   }
