@@ -557,9 +557,10 @@ window.Ads = (function () {
     if (mode === 'daily') { dcfg = dailyConfig(dayKey()); runShape = dcfg.shape; hueBase = dcfg.hue; }
     else { dcfg = null; runShape = shape; hueBase = SHAPE_HUE[shape] + (Math.random() - 0.5) * 50; }
     timeLeft = TIME_START;
-    const ped = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: colorAt(0).offsetHSL(0, -0.1, -0.12) }));
-    ped.scale.set(START, 30, START); ped.position.set(0, -H / 2 - 15, 0); world.add(ped);
     const first = regular(runShape, runShape === 'square' ? START_AREA : START_AREA * 0.86, 0, 0);
+    // The base is a tall column of the same shape, so the tower grows out of it.
+    const ped = meshFor(first, 0, 0, colorAt(0).offsetHSL(0, -0.1, -0.12));
+    ped.scale.y = 30; ped.position.set(0, -H / 2 - 15, 0);
     stack.push(addLayer(first, 0));
     setBg(0);
     scoreEl.textContent = '0';
