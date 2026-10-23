@@ -51,12 +51,22 @@ const ROSE = {
   21: { bg: 'linear-gradient(180deg, #ffee00, #e6d600)', star: ['#0d0d0d', '#2a2a2a'], heart: ['#ff0090', '#ff4fb0'], circle: ['#0077bb', '#1f99e0'] },
   22: { bg: 'linear-gradient(180deg, #101440, #070920)', star: ['#ffffff', '#f0f0f0'], heart: ['#ff96b8', '#ffc0d4'], circle: ['#7ae8fa', '#b0f3ff'] },
   23: { bg: 'linear-gradient(180deg, #08e592, #05b373)', star: ['#ffee00', '#fff566'], heart: ['#aa00ff', '#c64dff'], circle: ['#1e0a3c', '#3a1a6a'] },
+  // grainy poster gradients (towers climb the type gradient, deep to pale)
+  24: { grain: 1, bg: 'linear-gradient(180deg, #454c35, #7f9c3c 55%, #c4f53c)', star: ['#ffe600', '#fff6c8'], heart: ['#6f9a38', '#c8f53a'], circle: ['#a8e83a', '#fff27a'] },
+  25: { grain: 1, bg: 'linear-gradient(180deg, #3a3c9c, #c44aa6 55%, #f0a0b4)', star: ['#f6c9b8', '#fbeee4'], heart: ['#e8409a', '#f27ea6'], circle: ['#f27ea6', '#f6c9b8'] },
+  26: { grain: 1, bg: 'linear-gradient(180deg, #30475a, #0f6670 50%, #4ab2e6)', star: ['#9fd2f0', '#f4f7fb'], heart: ['#2a7891', '#3a9fd0'], circle: ['#3a9fd0', '#bfe3f7'] },
+  27: { grain: 1, bg: 'linear-gradient(180deg, #4a3440, #d8436a 55%, #f7a86a)', star: ['#f6b483', '#f8e6c8'], heart: ['#e8435a', '#f2836a'], circle: ['#f2836a', '#f6c49a'] },
   // used by glitch modes 2 and 4: one print colour per tower
   cmy: { bg: '#000', star: ['#ffe600', '#fff27a'], heart: ['#ff2fa8', '#ff6fc2'], circle: ['#22e4ff', '#7af0ff'] }
 };
 const glitch = q.get('glitch');
 const rose = ROSE[q.get('rose')] || (q.get('glitch') === '2' ? ROSE.cmy : null);
 document.body.style.background = rose ? rose.bg : BGS[bg];
+if (rose && rose.grain) {
+  const gr = document.createElement('div');
+  gr.style.cssText = `position:fixed;inset:0;z-index:5;pointer-events:none;mix-blend-mode:soft-light;opacity:.9;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`;
+  document.body.appendChild(gr);
+}
 if (bg === '5') {
   // a few soft "stars" in the sky, fixed positions so every render is identical
   const pts = [[12,10,3],[28,22,2],[44,7,2.5],[70,12,3],[86,26,2],[18,38,2],[90,6,2.5],[60,30,1.8],[8,58,2],[93,48,2.2],[35,14,1.6],[78,40,1.6]];
