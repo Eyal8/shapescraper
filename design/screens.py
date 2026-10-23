@@ -1,5 +1,6 @@
 # Renders store screenshots by auto-playing the real game (www/index.html#shots).
 import pathlib
+from PIL import Image
 from playwright.sync_api import sync_playwright
 root = pathlib.Path(__file__).resolve().parent.parent
 out = root / 'store'
@@ -15,7 +16,9 @@ PLAY = """async ({n, perfectTail, offs, shape}) => {
   }
 }"""
 OFFS = [0, 0.18, 0, 0, -0.12, 0, 0, 0.1, 0, 0, -0.15, 0, 0]
-devices = {'iphone': dict(viewport={'width': 430, 'height': 932}, device_scale_factor=3),
+# App Store: medium display (1206x2622) is required; large display (1290x2796) is optional.
+devices = {'iphone': dict(viewport={'width': 402, 'height': 874}, device_scale_factor=3),
+           'iphone-large': dict(viewport={'width': 430, 'height': 932}, device_scale_factor=3),
            'android': dict(viewport={'width': 360, 'height': 640}, device_scale_factor=3)}
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'])
@@ -38,7 +41,9 @@ with sync_playwright() as p:
             if over:
                 pg.evaluate("() => { window.__ts.setOff(6.9); window.__ts.place(); }")
                 pg.wait_for_timeout(2500)
-            pg.screenshot(path=str(out / ('ios' if name == 'iphone' else 'android') / 'screenshots' / f'{name}-{shot}.png'))
+            dest = out / ('android' if name == 'android' else 'ios') / 'screenshots' / f'{name}-{shot}.png'
+            pg.screenshot(path=str(dest))
+            Image.open(dest).convert('RGB').save(dest)  # Apple rejects alpha channels
             print('wrote', name, shot)
             pg.close()
     b.close()
