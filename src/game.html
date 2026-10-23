@@ -202,6 +202,12 @@ button { font: inherit; color: inherit; }
 .check svg { width: 28px; height: 28px; }
 .check path { fill: none; stroke: var(--ink-dark); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
 .celebrate-title { font: 800 26px/1.1 var(--display); }
+#unlockCard { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.stamp { width: 64px; height: 64px; border-radius: 50%; background: var(--gold); display: grid; place-items: center; animation: stamp 0.5s cubic-bezier(.2,1.6,.4,1) both; box-shadow: 0 6px 22px rgba(20,24,40,0.25); }
+.stamp svg { width: 34px; height: 34px; }
+.stamp path { fill: var(--ink-dark); }
+#banner .bglyph { display: block; width: 44px; height: 44px; margin: 0 auto 8px; }
+#banner .bglyph path { fill: var(--gold); }
 @keyframes stamp { from { transform: scale(0.2) rotate(-25deg); opacity: 0; } to { transform: none; opacity: 1; } }
 #mute {
   position: fixed; pointer-events: auto; z-index: 5;
@@ -291,7 +297,7 @@ button { font: inherit; color: inherit; }
 .cal-detail span { display: block; text-wrap: balance; }
 p, .info, .label, .celebrate-title { text-wrap: balance; }
 @media (max-height: 720px) { .panel h1 { font-size: 30px; } .card { gap: 9px; padding: 12px; } .tagline { display: none; } }
-@media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check { animation: none; } }
+@media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check, .stamp { animation: none; } }
 </style>
 
 <canvas id="c" aria-label="Shapescraper game"></canvas>
@@ -382,6 +388,10 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
         <div class="celebrate-title" id="celebrateTitle">Day complete!</div>
         <div class="label" id="celebrateSub"></div>
       </div>
+      <div id="unlockCard" hidden>
+        <div class="stamp"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path id="unlockGlyph"/></svg></div>
+        <div class="celebrate-title" id="unlockTitle">Triangle unlocked!</div>
+      </div>
       <div class="label" id="overMode">Endless</div>
       <div class="stats">
         <div><span class="label">Score</span><span class="big" id="finalScore">0</span></div>
@@ -391,6 +401,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <div class="label" id="overGoal" hidden></div>
       <div class="label" id="unlockNote" hidden></div>
       <div class="actions">
+        <button type="button" class="btn primary" id="tryNewBtn" hidden>Play triangle</button>
         <button type="button" class="btn primary" id="againBtn">Play again</button>
       </div>
       <div class="row">
@@ -1249,8 +1260,11 @@ window.Ads = (function () {
     if (!next || score !== UNLOCK[mode][next]) return;
     if (!isUnlocked(next)) {
       unlock(next); newlyUnlocked = next;
-      showPopup(SHAPE_NAMES[next] + ' unlocked!', 1600);
-      tone(660, 0.3, 'sine', 0.18);
+      // a proper moment: banner with the new shape, confetti, a little fanfare, a success tap
+      showBanner(SHAPE_NAMES[next] + ' unlocked!', 'New shape · keep stacking', next);
+      celebrate(false);
+      tone(660, 0.22, 'sine', 0.18); setTimeout(() => tone(880, 0.22, 'sine', 0.18), 120); setTimeout(() => tone(1320, 0.35, 'sine', 0.16), 240);
+      buzz([20, 40, 20], 'success');
     }
   }
 
@@ -1306,9 +1320,9 @@ window.Ads = (function () {
     if (!parts.length) fctx.clearRect(0, 0, innerWidth, innerHeight);
   }
   let bannerTimer;
-  function showBanner(title, small) {
+  function showBanner(title, small, glyph) {
     const b = $('banner');
-    b.innerHTML = '';
+    b.innerHTML = glyph ? '<svg class="bglyph" viewBox="-1 -1 2 2" aria-hidden="true"><path d="' + glyphPath(glyph) + '"/></svg>' : '';
     b.append(title);
     if (small) { const s2 = document.createElement('small'); s2.textContent = small; b.append(s2); }
     b.hidden = false; b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
@@ -1758,8 +1772,20 @@ window.Ads = (function () {
       } else og.hidden = true;
       $('overMode').hidden = dailyJustDone;
       $('overCalBtn').hidden = mode !== 'daily';
+      // a new shape gets its own block on the results card and a button to go straight to it
+      const fresh = newlyUnlocked && !dailyJustDone;
+      $('unlockCard').hidden = !fresh;
+      $('tryNewBtn').hidden = !fresh;
+      $('againBtn').classList.toggle('primary', !fresh);
+      if (fresh) {
+        $('unlockGlyph').setAttribute('d', glyphPath(newlyUnlocked));
+        $('unlockTitle').textContent = SHAPE_NAMES[newlyUnlocked] + ' unlocked!';
+        $('tryNewBtn').textContent = 'Play ' + SHAPE_NAMES[newlyUnlocked].toLowerCase();
+        $('againBtn').textContent = 'Play ' + SHAPE_NAMES[runShape].toLowerCase() + ' again';
+        celebrate(true);
+      } else $('againBtn').textContent = 'Play again';
+      $('overMode').hidden = dailyJustDone || fresh;
       const notes = [];
-      if (newlyUnlocked) notes.push(SHAPE_NAMES[newlyUnlocked] + ' unlocked');
       opened.forEach((o) => notes.push(o + ' unlocked'));
       const un = $('unlockNote');
       un.textContent = notes.join(' · ');
@@ -1910,6 +1936,12 @@ window.Ads = (function () {
     store.set('ts_muted', muted ? 1 : 0);
   });
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
+  $('tryNewBtn').addEventListener('click', () => {
+    initAudio();
+    const s = newlyUnlocked; if (!s) return;
+    shape = s; store.set('ss_shape', s); // the menu carousel follows on the next visit
+    playAgain();
+  });
   $('menuBtn').addEventListener('click', () => { if (!busy) { runDate = null; showMenu(); } });
 
   const privacyBtns = document.querySelectorAll('.privacy-btn');
