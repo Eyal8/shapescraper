@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 root = pathlib.Path(__file__).resolve().parent
 out = root.parent / 'assets'
 jobs = [('icon', 1024, 1024, 'icon-only.png', False), ('fg', 1024, 1024, 'icon-foreground.png', True),
-        ('splash', 2732, 2732, 'splash.png', False), ('feature', 1024, 500, '../store/feature-graphic.png', False)]
+        ('splash', 2732, 2732, 'splash.png', False), ('feature', 1024, 500, '../store/android/feature-graphic.png', False)]
 (root.parent / 'store').mkdir(exist_ok=True)
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'])

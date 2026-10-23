@@ -38,7 +38,7 @@ with sync_playwright() as p:
             if over:
                 pg.evaluate("() => { window.__ts.setOff(6.9); window.__ts.place(); }")
                 pg.wait_for_timeout(2500)
-            pg.screenshot(path=str(out / f'{name}-{shot}.png'))
+            pg.screenshot(path=str(out / ('ios' if name == 'iphone' else 'android') / 'screenshots' / f'{name}-{shot}.png'))
             print('wrote', name, shot)
             pg.close()
     b.close()
