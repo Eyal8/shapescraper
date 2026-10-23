@@ -936,6 +936,15 @@ window.Ads = (function () {
   // a full cycle every 60 blocks); they differ only in how vivid the blocks and background are.
   const PINK = '#ff206e', LEMON = '#fbff12', TURQ = '#41ead4';
   const KLEIN = '#4100f5', CITRIC = '#cdf564', AQUA = '#9bf0e1', FUCH = '#f037a5', TANG = '#ff4632', K_BLACK = '#191414';
+  const CMY = ['#22e4ff', '#2433ff', '#ff2fa8', '#f2222e', '#ffe600'];
+  const HOLO = ['#8af3ff', '#b9a4ff', '#ff9fd6', '#ffe98a', '#9dffc8'];
+  const GHOST = 'drop-shadow(9px 0 0 rgba(242,34,46,0.9)) drop-shadow(-9px 3px 0 rgba(34,228,255,0.85)) drop-shadow(0 -7px 0 rgba(255,230,0,0.8))';
+  const GHOST_SOFT = 'drop-shadow(8px 0 0 rgba(255,47,168,0.6)) drop-shadow(-8px 2px 0 rgba(34,228,255,0.6))';
+  const DOTS = [['#ffd100', '#ff0090'], ['#ff7ae6', '#0033b3'], ['#aa00ff', '#ffa500'], ['#f7471a', '#3d3533'], ['#0077bb', '#ffee00'],
+    ['#5aa8dc', '#006b50'], ['#5c5c5c', '#08e592'], ['#88a8d2', '#1e0a3c'], ['#ffaecc', '#f7471a'], ['#52aa50', '#76186a'],
+    ['#930038', '#8adcdc'], ['#f97328', '#0a4495'], ['#2468a0', '#ff7ab8'], ['#d80a2a', '#0a5aa0'], ['#aa00ff', '#aaff00'],
+    ['#45aaaa', '#660044'], ['#0d0d0d', '#ffee00'], ['#fdcf3c', '#227a80'], ['#191780', '#7ae8fa'], ['#ffffff', '#101440'],
+    ['#2e2062', '#99f9aa'], ['#ff96b8', '#7d52b0'], ['#36387e', '#ff0060'], ['#ffb6aa', '#0a5fa5'], ['#ffee00', '#ee0a0a']];
   const XITE = [['#f9a0f0', '#00330f'], ['#ee3333', '#ff9999'], ['#c0dd00', '#8800ee'], ['#66cc99', '#003080'], ['#00ee66', '#004400'],
     ['#ff6611', '#445500'], ['#cc99ff', '#552200'], ['#ffff00', '#990066'], ['#00b4ff', '#660033'], ['#ddee77', '#445500'],
     ['#ff77dd', '#77ddff'], ['#ddee77', '#550088']];
@@ -964,12 +973,24 @@ window.Ads = (function () {
     kleinDusk:    { name: 'Klein · dusk',        stops: [FUCH, TANG, CITRIC, AQUA, KLEIN], period: 40, bg: 'dusk' },
     // XITE-style colour pairs: a vivid block colour on its partner background
     xite:         { name: 'XITE · pairs cycle',  pairs: XITE, period: 45, bg: 'pair' },
-    xiteSolid:    { name: 'XITE · one pair',     pairs: XITE, solid: true, period: 40, bg: 'pair' }
+    xiteSolid:    { name: 'XITE · one pair',     pairs: XITE, solid: true, period: 40, bg: 'pair' },
+    // Misregistered print / chromatic split: cyan, blue, magenta, red, yellow; optional coloured ghost copies
+    glitchDark:   { name: 'Glitch · on charcoal', stops: CMY, period: 30, bg: ['#2d2d32', '#141416'] },
+    glitchGhost:  { name: 'Glitch · white + ghosts', stops: ['#ffffff', '#ececec'], period: 20, bg: ['#2d2d32', '#141416'], ghost: GHOST },
+    glitchColor:  { name: 'Glitch · colour + ghosts', stops: CMY, period: 30, bg: ['#2d2d32', '#141416'], ghost: GHOST_SOFT },
+    glitchPaper:  { name: 'Glitch · on paper',   stops: CMY, period: 30, bg: ['#efede7', '#d6d2c9'], ink: '#1d1d22', ghost: GHOST_SOFT },
+    holo:         { name: 'Holo · dark',         stops: HOLO, period: 24, bg: ['#1f1c33', '#0a0912'] },
+    holoLight:    { name: 'Holo · light',        stops: HOLO, period: 24, bg: ['#f4f2ff', '#d6e2ff'], ink: '#1d1d22' },
+    holoDeep:     { name: 'Holo · deep',         stops: ['#22e4ff', '#7a5cff', '#ff2fa8', '#ffb547', '#c6ff5c'], period: 30, bg: ['#120f24', '#2a0f3a'] },
+    // Colour-block grid: a dot colour on its square colour
+    dotsOne:      { name: 'Dots · one pair',     pairs: DOTS, solid: true, period: 40, bg: 'pair' },
+    dotsCycle:    { name: 'Dots · pairs cycle',  pairs: DOTS, period: 60, bg: 'pair' }
   };
   const devPalettes = !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   let pal = PALETTES[PALETTE];
   if (devPalettes) { try { const k = localStorage.getItem('ss_dev_palette'); if (PALETTES[k]) pal = PALETTES[k]; } catch (e) {} }
   function applyBgVars() {
+    const cv = document.getElementById('c'); if (cv) cv.style.filter = pal.ghost || '';
     if (pal.ink) document.documentElement.style.setProperty('--ink', pal.ink); else document.documentElement.style.removeProperty('--ink');
     if (pal.stops || pal.pairs) return;
     const st = document.documentElement.style, [s1, l1, s2, l2] = pal.bg;

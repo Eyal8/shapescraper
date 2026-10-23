@@ -41,9 +41,21 @@ const ROSE = {
   13: { bg: 'linear-gradient(180deg, #8800ee, #5500a0)', star: ['#a8c400', '#d6f000'], heart: ['#ff77dd', '#ffb0ee'], circle: ['#00c45a', '#00ee66'] },
   14: { bg: 'linear-gradient(180deg, #00330f, #001a08)', star: ['#00c45a', '#00ee66'], heart: ['#f080e8', '#f9a0f0'], circle: ['#e8e800', '#ffff00'] },
   15: { bg: 'linear-gradient(180deg, #990066, #5c003d)', star: ['#e8e800', '#ffff00'], heart: ['#ff77dd', '#ffc0f0'], circle: ['#00a0e8', '#00b4ff'] },
-  16: { bg: 'linear-gradient(180deg, #77ddff, #3fb6e6)', star: ['#e8e800', '#ffff00'], heart: ['#ff55cc', '#ff77dd'], circle: ['#5500a0', '#7a20d0'] }
+  16: { bg: 'linear-gradient(180deg, #77ddff, #3fb6e6)', star: ['#e8e800', '#ffff00'], heart: ['#ff55cc', '#ff77dd'], circle: ['#5500a0', '#7a20d0'] },
+  // holographic gradients
+  17: { bg: 'linear-gradient(180deg, #1f1c33, #0a0912)', star: ['#ffe98a', '#9dffc8'], heart: ['#b9a4ff', '#ff9fd6'], circle: ['#8af3ff', '#b9a4ff'] },
+  18: { bg: 'linear-gradient(180deg, #f4f2ff, #d6e2ff)', star: ['#ffd36b', '#7dffc0'], heart: ['#9b82ff', '#ff86c8'], circle: ['#5ee8ff', '#9b82ff'] },
+  19: { bg: 'linear-gradient(160deg, #22e4ff 0%, #7a5cff 35%, #ff2fa8 70%, #ffb547 100%)', star: ['#ffffff', '#fff6d0'], heart: ['#ffffff', '#ffe0f2'], circle: ['#ffffff', '#dff9ff'] },
+  // colour-block grid pairs
+  20: { bg: 'linear-gradient(180deg, #0033b3, #001f70)', star: ['#ffd100', '#ffe566'], heart: ['#ff7ae6', '#ffaef0'], circle: ['#f97328', '#ff9a5c'] },
+  21: { bg: 'linear-gradient(180deg, #ffee00, #e6d600)', star: ['#0d0d0d', '#2a2a2a'], heart: ['#ff0090', '#ff4fb0'], circle: ['#0077bb', '#1f99e0'] },
+  22: { bg: 'linear-gradient(180deg, #101440, #070920)', star: ['#ffffff', '#f0f0f0'], heart: ['#ff96b8', '#ffc0d4'], circle: ['#7ae8fa', '#b0f3ff'] },
+  23: { bg: 'linear-gradient(180deg, #08e592, #05b373)', star: ['#ffee00', '#fff566'], heart: ['#aa00ff', '#c64dff'], circle: ['#1e0a3c', '#3a1a6a'] },
+  // used by glitch modes 2 and 4: one print colour per tower
+  cmy: { bg: '#000', star: ['#ffe600', '#fff27a'], heart: ['#ff2fa8', '#ff6fc2'], circle: ['#22e4ff', '#7af0ff'] }
 };
-const rose = ROSE[q.get('rose')];
+const glitch = q.get('glitch');
+const rose = ROSE[q.get('rose')] || (q.get('glitch') === '2' ? ROSE.cmy : null);
 document.body.style.background = rose ? rose.bg : BGS[bg];
 if (bg === '5') {
   // a few soft "stars" in the sky, fixed positions so every render is identical
@@ -128,7 +140,33 @@ if (layout === 'I') {
 const view = 15.2, cy = 3.2;
 const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
 cam.position.set(11, cy + 19, 11); cam.lookAt(0, cy, 0);
-r.render(scene, cam);
+if (!glitch) r.render(scene, cam);
+else {
+  // Misregistered print: render the towers several times in flat ink colours, offset, and blend them.
+  canvas.style.display = 'none';
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  out.style.cssText = 'position:fixed;inset:0;width:100%;height:100%'; document.body.appendChild(out);
+  const ctx = out.getContext('2d'), d = Math.round(W * (glitch === '1' || glitch === '2' ? 0.024 : 0.014));
+  const paper = glitch === '3' || glitch === '4';
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  if (paper) { grad.addColorStop(0, '#efede7'); grad.addColorStop(1, '#d6d2c9'); } else { grad.addColorStop(0, '#2d2d32'); grad.addColorStop(1, '#121214'); }
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+  const pass = (color, dx, dy, op) => {
+    scene.overrideMaterial = color ? new THREE.MeshLambertMaterial({ color }) : null;
+    r.render(scene, cam); ctx.globalCompositeOperation = op; ctx.drawImage(canvas, dx, dy);
+  };
+  if (glitch === '1') { // white towers with RGB ghosts on charcoal
+    pass('#f2222e', d, 0, 'screen'); pass('#22e4ff', -d, d * 0.3, 'screen'); pass('#ffe600', 0, -d * 0.8, 'screen'); pass('#2433ff', -d * 0.6, d, 'screen');
+    pass('#ffffff', 0, 0, 'source-over');
+  } else if (glitch === '2') { // print-colour towers with cyan/magenta ghosts on charcoal
+    pass('#22e4ff', -d, d * 0.3, 'screen'); pass('#ff2fa8', d, 0, 'screen'); pass(null, 0, 0, 'source-over');
+  } else if (glitch === '3') { // two-plate overprint on paper: cyan + magenta, overlaps go violet
+    pass('#3ad8ff', -d * 1.6, d * 0.4, 'multiply'); pass('#ff3da0', d * 1.6, -d * 0.4, 'multiply');
+  } else { // three light plates on paper, wide misregistration
+    pass('#fff04a', 0, d * 2, 'multiply'); pass('#ff7ccc', d * 2, -d * 0.6, 'multiply'); pass('#6fe6ff', -d * 2, -d * 0.6, 'multiply');
+  }
+  scene.overrideMaterial = null;
+}
 document.title = 'ready';
 </script>
 </body></html>
