@@ -1,0 +1,109 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#stars{position:fixed;inset:0}
+</style></head>
+<body>
+<div id="stars"></div>
+<canvas id="c"></canvas>
+<script src="../node_modules/three/build/three.min.js"></script>
+<script>
+// Icon v2. ?bg=1..6  ?layout=I|H  ?shape3=star|hexagon|triangle
+const q = new URLSearchParams(location.search);
+const bg = q.get('bg') || '1', layout = q.get('layout') || 'H', third = q.get('shape3') || 'star';
+const BGS = {
+  1: 'linear-gradient(180deg, hsl(250 45% 30%), hsl(300 45% 22%))',                         // night purple
+  2: 'radial-gradient(circle at 55% 45%, hsl(255 55% 42%) 0%, hsl(245 55% 20%) 55%, hsl(240 60% 12%) 100%)', // navy with a glow
+  3: 'linear-gradient(180deg, hsl(255 50% 22%) 0%, hsl(305 55% 30%) 55%, hsl(20 80% 45%) 100%)',  // dusk
+  4: 'linear-gradient(180deg, hsl(200 60% 22%), hsl(230 55% 14%))',                         // midnight blue-teal
+  5: 'linear-gradient(180deg, hsl(245 50% 18%), hsl(275 50% 14%))',                         // night sky (+ dots)
+  6: 'linear-gradient(180deg, hsl(28 90% 86%), hsl(350 70% 74%))'                           // light, the game's menu palette
+};
+document.body.style.background = BGS[bg];
+if (bg === '5') {
+  // a few soft "stars" in the sky, fixed positions so every render is identical
+  const pts = [[12,10,3],[28,22,2],[44,7,2.5],[70,12,3],[86,26,2],[18,38,2],[90,6,2.5],[60,30,1.8],[8,58,2],[93,48,2.2],[35,14,1.6],[78,40,1.6]];
+  document.getElementById('stars').innerHTML = pts.map(([x, y, r]) => `<i style="position:absolute;left:${x}%;top:${y}%;width:${r*4}px;height:${r*4}px;border-radius:50%;background:#fff;opacity:.55;box-shadow:0 0 ${r*6}px #fff"></i>`).join('');
+}
+
+const canvas = document.getElementById('c');
+const W = innerWidth, H = innerHeight;
+const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setPixelRatio(1); r.setSize(W, H, false);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.58));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(5, 14, 3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.28); fill.position.set(-8, 3, -2); scene.add(fill);
+
+function poly(n, rot = -Math.PI / 2, rad = 1) {
+  const s = new THREE.Shape();
+  for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; const p = [Math.cos(a) * rad, Math.sin(a) * rad]; i ? s.lineTo(...p) : s.moveTo(...p); }
+  s.closePath(); return s;
+}
+const SHAPES = {
+  circle: () => { const s = new THREE.Shape(); s.absarc(0, 0, 1, 0, Math.PI * 2, false); return s; },
+  triangle: () => poly(3, -Math.PI / 2, 1.3),
+  hexagon: () => poly(6, 0, 1.1),
+  star: () => {
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 ? 0.56 : 1.3; const p = [Math.cos(a) * rr, Math.sin(a) * rr]; i ? s.lineTo(...p) : s.moveTo(...p); }
+    s.closePath(); return s;
+  },
+  heart: () => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -1.05);
+    s.bezierCurveTo(-0.6, -0.55, -1.25, -0.15, -1.15, 0.4);
+    s.bezierCurveTo(-1.05, 0.95, -0.35, 1.15, 0, 0.6);
+    s.bezierCurveTo(0.35, 1.15, 1.05, 0.95, 1.15, 0.4);
+    s.bezierCurveTo(1.25, -0.15, 0.6, -0.55, 0, -1.05);
+    return s;
+  }
+};
+const geoCache = {};
+function layerGeo(kind) {
+  if (!geoCache[kind]) {
+    const g = new THREE.ExtrudeGeometry(SHAPES[kind](), { depth: 1, bevelEnabled: false, curveSegments: 48 });
+    g.rotateX(-Math.PI / 2);
+    geoCache[kind] = g;
+  }
+  return geoCache[kind];
+}
+const mat = (h, s, l) => new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(((h % 360) + 360) % 360 / 360, s, l) });
+// A tower like real play: most drops perfect, a few misses where the block shrinks and shifts.
+// misses: {layerIndex: [shrink, dx, dz]}; hue ramps from h0 (bottom) to h1 (top).
+function tower(kind, x, z, layers, h0, h1, scale, misses = {}) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(layerGeo(kind), mat(h0, 0.65, 0.5));
+  base.scale.set(scale, 40, scale); base.position.y = -40; g.add(base);
+  let s = scale, ox = 0, oz = 0;
+  for (let i = 0; i < layers; i++) {
+    if (misses[i]) { const [k, dx, dz] = misses[i]; s *= k; ox += dx; oz += dz; }
+    const t = layers > 1 ? i / (layers - 1) : 1;
+    const m = new THREE.Mesh(layerGeo(kind), mat(h0 + (h1 - h0) * t, 0.78, 0.56 + t * 0.08 + (i % 2 ? 0.025 : 0)));
+    m.scale.set(s, 1, s); m.position.set(ox, i, oz); g.add(m);
+  }
+  g.rotation.y = Math.PI / 4;
+  g.position.set(x, 0, z); scene.add(g);
+}
+const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2];
+const thirdTop = { star: [20, 45], hexagon: [20, 45], triangle: [20, 45] }[third];
+if (layout === 'I') {
+  // heart tall on the right (purple -> pink), circle medium on the left (teal -> green), third shape short in front (orange)
+  tower('heart', ...at(3.7, -2.2), 8, 280, 335, 2.35, { 3: [0.9, 0.12, 0], 6: [0.92, 0, -0.1] });
+  tower('circle', ...at(-3.9, -1.4), 5, 175, 120, 2.0, { 2: [0.88, 0, 0.12] });
+  tower(third, ...at(-0.1, 2.9), 3, thirdTop[0], thirdTop[1], 2.15, { 1: [0.9, -0.1, 0] });
+} else {
+  // H: third shape tall at the back, heart medium on the left, circle short on the right
+  tower(third, ...at(0.4, -3.0), 8, 15, 45, 2.05, { 3: [0.9, 0.1, 0], 6: [0.92, 0, -0.1] });
+  tower('heart', ...at(-4.4, 0.6), 5, 280, 335, 2.0, { 2: [0.9, -0.1, 0] });
+  tower('circle', ...at(4.5, 1.4), 3, 175, 120, 1.75, { 1: [0.88, 0, 0.1] });
+}
+const view = 15.2, cy = 3.2;
+const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
+cam.position.set(11, cy + 19, 11); cam.lookAt(0, cy, 0);
+r.render(scene, cam);
+document.title = 'ready';
+</script>
+</body></html>
