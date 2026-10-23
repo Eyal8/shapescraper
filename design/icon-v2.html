@@ -31,7 +31,17 @@ const ROSE = {
   5: { bg: `linear-gradient(180deg, ${PINK} 0%, #ff7a3d 55%, ${LEMON} 100%)`, star: [WHT, '#fffde0'], heart: ['#6a0a2b', '#b3134c'], circle: ['#139684', TURQ] },
   6: { bg: `linear-gradient(180deg, ${TURQ} 0%, #8f7bd8 50%, ${PINK} 100%)`, star: [LEMON, WHT], heart: [WHT, '#ffe0ec'], circle: [BLK, '#333'] },
   7: { bg: `radial-gradient(circle at 55% 40%, #3b0f24 0%, ${BLK} 70%)`, star: [LEMON, WHT], heart: ['#b3134c', PINK], circle: ['#1fae9c', TURQ] },
-  8: { bg: `linear-gradient(180deg, ${BLK} 0%, #2a0a18 60%, ${PINK} 130%)`, star: [TURQ, '#bff8f0'], heart: [LEMON, '#fffbb0'], circle: [PINK, '#ff8fb5'] }
+  8: { bg: `linear-gradient(180deg, ${BLK} 0%, #2a0a18 60%, ${PINK} 130%)`, star: [TURQ, '#bff8f0'], heart: [LEMON, '#fffbb0'], circle: [PINK, '#ff8fb5'] },
+  // Klein blue palette
+  9:  { bg: 'linear-gradient(180deg, #4100f5, #22007f)', star: ['#cdf564', '#e8ffa0'], heart: ['#c0247f', '#f037a5'], circle: ['#e0331f', '#ff4632'] },
+  10: { bg: 'linear-gradient(180deg, #2a2222, #191414)', star: ['#cdf564', '#e8ffa0'], heart: ['#c0247f', '#f037a5'], circle: ['#3a00d0', '#5a2bff'] },
+  11: { bg: 'linear-gradient(180deg, #9bf0e1 0%, #f5f064 30%, #ff4632 58%, #191414 80%, #4100f5 100%)', star: ['#ffffff', '#eef'], heart: ['#c0247f', '#f037a5'], circle: ['#3a00d0', '#5a2bff'] },
+  12: { bg: 'linear-gradient(180deg, #cdf564, #a9d43a)', star: ['#3a00d0', '#5a2bff'], heart: ['#c0247f', '#f037a5'], circle: ['#e0331f', '#ff4632'] },
+  // XITE colour pairs
+  13: { bg: 'linear-gradient(180deg, #8800ee, #5500a0)', star: ['#a8c400', '#d6f000'], heart: ['#ff77dd', '#ffb0ee'], circle: ['#00c45a', '#00ee66'] },
+  14: { bg: 'linear-gradient(180deg, #00330f, #001a08)', star: ['#00c45a', '#00ee66'], heart: ['#f080e8', '#f9a0f0'], circle: ['#e8e800', '#ffff00'] },
+  15: { bg: 'linear-gradient(180deg, #990066, #5c003d)', star: ['#e8e800', '#ffff00'], heart: ['#ff77dd', '#ffc0f0'], circle: ['#00a0e8', '#00b4ff'] },
+  16: { bg: 'linear-gradient(180deg, #77ddff, #3fb6e6)', star: ['#e8e800', '#ffff00'], heart: ['#ff55cc', '#ff77dd'], circle: ['#5500a0', '#7a20d0'] }
 };
 const rose = ROSE[q.get('rose')];
 document.body.style.background = rose ? rose.bg : BGS[bg];

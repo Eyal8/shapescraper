@@ -935,6 +935,10 @@ window.Ads = (function () {
   // Every palette changes color the same way as the tower grows (6 degrees of hue per block,
   // a full cycle every 60 blocks); they differ only in how vivid the blocks and background are.
   const PINK = '#ff206e', LEMON = '#fbff12', TURQ = '#41ead4';
+  const KLEIN = '#4100f5', CITRIC = '#cdf564', AQUA = '#9bf0e1', FUCH = '#f037a5', TANG = '#ff4632', K_BLACK = '#191414';
+  const XITE = [['#f9a0f0', '#00330f'], ['#ee3333', '#ff9999'], ['#c0dd00', '#8800ee'], ['#66cc99', '#003080'], ['#00ee66', '#004400'],
+    ['#ff6611', '#445500'], ['#cc99ff', '#552200'], ['#ffff00', '#990066'], ['#00b4ff', '#660033'], ['#ddee77', '#445500'],
+    ['#ff77dd', '#77ddff'], ['#ddee77', '#550088']];
   const PALETTES = {
     pastel:  { name: 'Pastel',     s: 0.62, l: 0.62, step: 6, bg: [60, 86, 48, 64], off: 35 },
     vivid:   { name: 'Vivid',      s: 0.85, l: 0.56, step: 6, bg: [78, 74, 66, 54], off: 35 },
@@ -951,14 +955,23 @@ window.Ads = (function () {
     roseLemon:    { name: 'Rose · on lemon',      stops: [PINK, TURQ, '#1b1b1b'], period: 30, bg: [LEMON, '#f7f7c8'], ink: '#141414' },
     roseAqua:     { name: 'Rose · on turquoise',  stops: [PINK, LEMON, '#ffffff'], period: 30, bg: [TURQ, '#0f6d63'] },
     roseHot:      { name: 'Rose · on pink',       stops: [LEMON, TURQ, '#ffffff'], period: 30, bg: [PINK, '#5a0a26'] },
-    roseSunrise:  { name: 'Rose · sunrise',       stops: [TURQ, '#ffffff', PINK], period: 30, bg: ['#ff5d95', LEMON] }
+    roseSunrise:  { name: 'Rose · sunrise',       stops: [TURQ, '#ffffff', PINK], period: 30, bg: ['#ff5d95', LEMON] },
+    // Klein blue, citric, aquamarine, fuchsia, tangerine, black
+    kleinBlue:    { name: 'Klein · on blue',     stops: [FUCH, TANG, CITRIC, AQUA], period: 36, bg: [KLEIN, '#1f0078'] },
+    kleinNoir:    { name: 'Klein · on black',    stops: [KLEIN, FUCH, TANG, CITRIC, AQUA], period: 40, bg: ['#2a2222', K_BLACK] },
+    kleinGradient:{ name: 'Klein · gradient',    stops: [AQUA, '#f5f064', TANG, FUCH, KLEIN], period: 40, bg: [K_BLACK, '#24008a'] },
+    kleinCitric:  { name: 'Klein · on citric',   stops: [KLEIN, FUCH, TANG], period: 30, bg: [CITRIC, '#a9d43a'], ink: '#191414' },
+    kleinDusk:    { name: 'Klein · dusk',        stops: [FUCH, TANG, CITRIC, AQUA, KLEIN], period: 40, bg: 'dusk' },
+    // XITE-style colour pairs: a vivid block colour on its partner background
+    xite:         { name: 'XITE · pairs cycle',  pairs: XITE, period: 45, bg: 'pair' },
+    xiteSolid:    { name: 'XITE · one pair',     pairs: XITE, solid: true, period: 40, bg: 'pair' }
   };
   const devPalettes = !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   let pal = PALETTES[PALETTE];
   if (devPalettes) { try { const k = localStorage.getItem('ss_dev_palette'); if (PALETTES[k]) pal = PALETTES[k]; } catch (e) {} }
   function applyBgVars() {
     if (pal.ink) document.documentElement.style.setProperty('--ink', pal.ink); else document.documentElement.style.removeProperty('--ink');
-    if (pal.stops) return;
+    if (pal.stops || pal.pairs) return;
     const st = document.documentElement.style, [s1, l1, s2, l2] = pal.bg;
     st.setProperty('--bg1s', s1 + '%'); st.setProperty('--bg1l', l1 + '%');
     st.setProperty('--bg2s', s2 + '%'); st.setProperty('--bg2l', l2 + '%'); st.setProperty('--bgoff', pal.off);
@@ -966,18 +979,29 @@ window.Ads = (function () {
   applyBgVars();
   const hueAt = (lvl) => (hueBase + lvl * (pal.step || 6)) % 360;
   // Color of a point on the stop loop: t counts blocks, starting where this round's random hue lands.
+  function pairIndex(t) {
+    const n = pal.pairs.length;
+    if (pal.solid) return Math.floor(((hueBase % 360) + 360) % 360 / 360 * n) % n;
+    return Math.round((((t / pal.period) % 1) + 1) % 1 * n) % n;
+  }
   function stopColor(t) {
+    if (pal.pairs) {
+      if (pal.solid) return new THREE.Color(pal.pairs[pairIndex(t)][0]).offsetHSL(0, 0, 0.05 * Math.sin(t / 2.5));
+      const n = pal.pairs.length, u = (((t / pal.period) % 1) + 1) % 1 * n, i = Math.floor(u);
+      return new THREE.Color(pal.pairs[i % n][0]).lerp(new THREE.Color(pal.pairs[(i + 1) % n][0]), u - i);
+    }
     const n = pal.stops.length, u = (((t / pal.period) % 1) + 1) % 1 * n, i = Math.floor(u);
     return new THREE.Color(pal.stops[i % n]).lerp(new THREE.Color(pal.stops[(i + 1) % n]), u - i);
   }
   const stopT = (lvl) => (hueBase / 360) * pal.period + lvl;
-  const colorAt = (lvl) => pal.stops ? stopColor(stopT(lvl)) : new THREE.Color().setHSL(hueAt(lvl) / 360, pal.s, pal.l);
+  const colorAt = (lvl) => (pal.stops || pal.pairs) ? stopColor(stopT(lvl)) : new THREE.Color().setHSL(hueAt(lvl) / 360, pal.s, pal.l);
   function setBg(lvl) {
     document.documentElement.style.setProperty('--h', Math.round(hueAt(lvl + 8)));
     const body = document.body;
-    if (!pal.stops) { body.style.background = ''; return; }
+    if (!pal.stops && !pal.pairs) { body.style.background = ''; return; }
     let top, bottom;
     if (Array.isArray(pal.bg)) [top, bottom] = pal.bg;
+    else if (pal.bg === 'pair') { const c = new THREE.Color(pal.pairs[pairIndex(stopT(lvl))][1]); top = '#' + c.getHexString(); bottom = '#' + c.clone().lerp(new THREE.Color(0), 0.35).getHexString(); }
     else {
       // the colour half a loop away from the top block, so the tower always contrasts with the sky
       const opp = stopColor(stopT(lvl) + pal.period / 2), k = new THREE.Color(pal.bg === 'pop' ? 0xffffff : 0x000000);
