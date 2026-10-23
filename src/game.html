@@ -692,15 +692,15 @@ window.Ads = (function () {
     const legacy = m === 'endless' && s === 'square' ? Math.max(store.get('ss_best_classic', 0) || 0, store.get('ts_best', 0) || 0) : 0;
     return store.get(bestKey(m, s), legacy) || 0;
   }
-  const unlockKey = (m) => m === 'time' ? 'ss_unlocked_time' : 'ss_unlocked';
-  function unlockedSet(m) { return store.get(unlockKey(m), ['square']); }
+  // Unlocks are shared: hitting a shape's target in either Endless or Time Attack (or watching the ad) opens it everywhere.
+  function unlockedSet() { return [...new Set([...store.get('ss_unlocked', ['square']), ...store.get('ss_unlocked_time', [])])]; }
   const prevShape = (s) => SHAPES[SHAPES.indexOf(s) - 1];
-  function isUnlocked(s, m) {
-    m = m === 'time' ? 'time' : 'endless';
-    if (s === 'square' || unlockedSet(m).includes(s)) return true;
-    return bestOf(m, prevShape(s)) >= UNLOCK[m][s];
+  function isUnlocked(s) {
+    if (s === 'square' || unlockedSet().includes(s)) return true;
+    const prev = prevShape(s);
+    return bestOf('endless', prev) >= UNLOCK.endless[s] || bestOf('time', prev) >= UNLOCK.time[s];
   }
-  function unlock(s, m) { const u = unlockedSet(m); if (!u.includes(s)) { u.push(s); store.set(unlockKey(m), u); } }
+  function unlock(s) { const u = store.get('ss_unlocked', ['square']); if (!u.includes(s)) { u.push(s); store.set('ss_unlocked', u); } }
   const endlessBestAny = () => Math.max(...SHAPES.map((s) => bestOf('endless', s)));
   function modeUnlocked(m) {
     if (m === 'endless') return true;
@@ -726,12 +726,17 @@ window.Ads = (function () {
   function dateToKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   // Frozen list: adding shapes later must not change which shape any past or future day gets.
   const DAILY_POOL = ['square', 'circle', 'triangle', 'pentagon', 'hexagon', 'octagon', 'cross', 'heart', 'star'];
+  // Each day picks one of the shapes this player has unlocked; once shown or played, a day's shape is saved so it never changes.
   function dailyConfig(key) {
-    const r = mulberry32(hashStr('ss-daily-v3-' + key));
-    const s = DAILY_POOL[Math.floor(r() * DAILY_POOL.length)];
-    const n = s === 'square' ? 8 + Math.floor(r() * 5) : 6 + Math.floor(r() * 5); // perfects to land
-    return { key, shape: s, goal: { type: 'perfects', n }, hue: Math.floor(r() * 360) };
+    const r = mulberry32(hashStr('ss-daily-v4-' + key));
+    const pick = r(), nr = r(), hue = Math.floor(r() * 360);
+    const saved = dayRec(key).shape;
+    const pool = DAILY_POOL.filter((x) => isUnlocked(x));
+    const s = saved && SHAPES.includes(saved) ? saved : pool[Math.floor(pick * pool.length)];
+    const n = s === 'square' ? 8 + Math.floor(nr * 5) : 6 + Math.floor(nr * 5); // perfects to land
+    return { key, shape: s, goal: { type: 'perfects', n }, hue };
   }
+  function pinDayShape(key) { const rec = dayRec(key); if (!rec.shape) { rec.shape = dailyConfig(key).shape; saveDay(key, rec); } }
   const goalText = (cfg) => 'Land ' + cfg.goal.n + ' perfect drops';
   // One record per calendar day: best floors, most perfects, completed, completed on the day itself, unlocked (past days).
   function days() { return store.get('ss_days', {}); }
@@ -907,7 +912,7 @@ window.Ads = (function () {
     while (world.children.length) removeMesh(world.children[0]);
     stack = []; debris = []; rings = []; moving = null;
     score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false; newlyUnlocked = null;
-    if (mode === 'daily') { runDate = runDate || dayKey(); dcfg = dailyConfig(runDate); runShape = dcfg.shape; hueBase = dcfg.hue; dailyAlready = dayRec(runDate).done; }
+    if (mode === 'daily') { runDate = runDate || dayKey(); pinDayShape(runDate); dcfg = dailyConfig(runDate); runShape = dcfg.shape; hueBase = dcfg.hue; dailyAlready = dayRec(runDate).done; }
     else { dcfg = null; runShape = shape; hueBase = SHAPE_HUE[shape] + (Math.random() - 0.5) * 50; }
     timeLeft = TIME_START;
     const ped = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: colorAt(0).offsetHSL(0, -0.1, -0.12) }));
@@ -1038,7 +1043,7 @@ window.Ads = (function () {
       else sub.textContent = 'Perfects ' + perfects + ' / ' + g.n;
     } else {
       const next = SHAPES[SHAPES.indexOf(runShape) + 1];
-      sub.textContent = next && !isUnlocked(next, 'endless') && score < UNLOCK.endless[next] ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK.endless[next] : '';
+      sub.textContent = next && !isUnlocked(next) && score < UNLOCK.endless[next] ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK.endless[next] : '';
     }
     sub.hidden = state !== 'playing' || !sub.textContent;
   }
@@ -1048,8 +1053,8 @@ window.Ads = (function () {
     if (mode !== 'endless' && mode !== 'time') return;
     const next = SHAPES[SHAPES.indexOf(runShape) + 1];
     if (!next || score !== UNLOCK[mode][next]) return;
-    if (!isUnlocked(next, mode)) {
-      unlock(next, mode); newlyUnlocked = next;
+    if (!isUnlocked(next)) {
+      unlock(next); newlyUnlocked = next;
       showPopup(SHAPE_NAMES[next] + ' unlocked!', 1600);
       tone(660, 0.3, 'sine', 0.18);
     }
@@ -1175,7 +1180,7 @@ window.Ads = (function () {
       page.setAttribute('aria-hidden', String(!current));
     });
     shapeBtns.forEach((b) => {
-      const s = b.dataset.shape, un = isUnlocked(s, b.closest('.page').dataset.page);
+      const s = b.dataset.shape, un = isUnlocked(s);
       b.classList.toggle('locked', !un);
       b.querySelector('.lock').style.display = un ? 'none' : '';
       b.setAttribute('aria-checked', String(s === shape));
@@ -1187,7 +1192,8 @@ window.Ads = (function () {
       page.querySelector('.page-lock').hidden = un;
       if (!un) { renderLock(page, m); play.innerHTML = 'Unlock ' + MODES[m] + '<small>' + adNote() + '</small>'; return; }
       if (m === 'daily') {
-        const key = dayKey(), cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
+        const key = dayKey(); pinDayShape(key);
+        const cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
         $('dailyDate').textContent = fmtDay(key);
         $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
         $('dailyShape').textContent = SHAPE_NAMES[cfg.shape];
@@ -1199,11 +1205,11 @@ window.Ads = (function () {
         return;
       }
       const label = page.querySelector('[data-best-label]'), big = page.querySelector('[data-best]'), sub = page.querySelector('[data-best-sub]');
-      if (!isUnlocked(shape, m)) {
-        const prev = prevShape(shape);
+      if (!isUnlocked(shape)) {
+        const prev = prevShape(shape), other = m === 'time' ? 'endless' : 'time';
         label.textContent = SHAPE_NAMES[shape] + ' is locked';
         big.textContent = bestOf(m, prev) + ' / ' + UNLOCK[m][shape];
-        sub.textContent = 'Your best in ' + SHAPE_NAMES[prev] + ' ' + MODES[m];
+        sub.textContent = SHAPE_NAMES[prev] + ' ' + MODES[m] + ' · or ' + UNLOCK[other][shape] + ' in ' + MODES[other];
         sub.hidden = false;
         play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>' + adNote() + '</small>';
       } else {
@@ -1479,9 +1485,9 @@ window.Ads = (function () {
       return;
     }
     if (mode === 'daily') runDate = dayKey();
-    if (mode !== 'daily' && !isUnlocked(shape, mode)) {
+    if (mode !== 'daily' && !isUnlocked(shape)) {
       const ok = await rewarded();
-      if (ok) { unlock(shape, mode); showPopup(SHAPE_NAMES[shape] + ' unlocked!', 1400); celebrate(false); }
+      if (ok) { unlock(shape); showPopup(SHAPE_NAMES[shape] + ' unlocked!', 1400); celebrate(false); }
       renderMenu();
       return;
     }
@@ -1748,7 +1754,7 @@ window.Ads = (function () {
       start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
-      unlockAll() { SHAPES.forEach((x) => { unlock(x, 'endless'); unlock(x, 'time'); }); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, MODE_UNLOCK.daily, bestOf('endless', 'square'))); renderMenu(); },
+      unlockAll() { SHAPES.forEach((x) => unlock(x)); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, MODE_UNLOCK.daily, bestOf('endless', 'square'))); renderMenu(); },
       calendar() { openCalendar(); },
       setMode(m) { setMode(m); },
       playDate(k) { mode = 'daily'; runDate = k; start(); },
