@@ -334,11 +334,11 @@ window.Ads = (function () {
 
   // ---------- modes ----------
   const MODES = {
-    shift:   { name: 'Shape Shift', shapes: true,  timer: false, cont: true,  every: 4,
-               info: 'The shape changes every few floors. Land it perfectly to lock in the clean new shape.' },
+    shift:   { name: 'Shape Shift', shapes: true,  timer: false, cont: true,  every: 2,
+               info: 'A new shape every other floor. Land it perfectly to lock in the clean new shape.' },
     classic: { name: 'Classic',     shapes: false, timer: false, cont: true,
                info: 'Squares only. Stack as high as you can.' },
-    time:    { name: 'Time Attack', shapes: true,  timer: true,  cont: true,  every: 5,
+    time:    { name: 'Time Attack', shapes: true,  timer: true,  cont: true,  every: 3,
                info: '60 seconds on the clock. Every perfect drop adds 2 seconds.' },
     daily:   { name: 'Daily',       shapes: true,  timer: false, cont: false,
                info: '' }
@@ -383,7 +383,7 @@ window.Ads = (function () {
     return {
       key, goal, only,
       pool: only ? [only] : ['circle', 'triangle', 'pentagon', 'hexagon', 'square'],
-      every: 3 + Math.floor(r() * 3),
+      every: 2 + Math.floor(r() * 2),
       hue: Math.floor(r() * 360),
       seed: hashStr('ss-run-' + key)
     };
@@ -506,7 +506,7 @@ window.Ads = (function () {
   let stack = [], debris = [], rings = [], moving = null;
   let score = 0, combo = 0, perfects = 0, bestChain = 0, hueBase = 0, camY = 2, overAt = 0;
   let gamesPlayed = 0, continued = false, busy = false, timeLeft = 0, endReason = '';
-  let rng = Math.random, dcfg = null, shiftKinds = {}, lastShiftKind = 'square', dailyJustDone = false;
+  let rng = Math.random, dcfg = null, shiftKinds = {}, recentKinds = ['square'], dailyJustDone = false;
 
   const hueAt = (lvl) => (hueBase + lvl * 6) % 360;
   const colorAt = (lvl) => new THREE.Color().setHSL(hueAt(lvl) / 360, 0.62, 0.62);
@@ -518,9 +518,11 @@ window.Ads = (function () {
   function kindAt(lvl) {
     if (!(lvl in shiftKinds)) {
       const pool = mode === 'daily' ? dcfg.pool : ['circle', 'triangle', 'pentagon', 'hexagon', 'square'];
-      let k, tries = 0;
-      do { k = pool[Math.floor(rng() * pool.length)]; } while (pool.length > 1 && k === lastShiftKind && ++tries < 12);
-      shiftKinds[lvl] = k; lastShiftKind = k;
+      // Never repeat the last shape, and avoid the one before it too when the pool allows.
+      const avoid = recentKinds.slice(-(pool.length > 2 ? 2 : 1));
+      const options = pool.filter((k) => !avoid.includes(k));
+      const k = (options.length ? options : pool)[Math.floor(rng() * (options.length || pool.length))];
+      shiftKinds[lvl] = k; recentKinds.push(k);
     }
     return shiftKinds[lvl];
   }
@@ -536,7 +538,7 @@ window.Ads = (function () {
     while (world.children.length) removeMesh(world.children[0]);
     stack = []; debris = []; rings = []; moving = null;
     score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false;
-    shiftKinds = {}; lastShiftKind = 'square';
+    shiftKinds = {}; recentKinds = ['square'];
     if (mode === 'daily') { dcfg = dailyConfig(dayKey()); rng = mulberry32(dcfg.seed); hueBase = dcfg.hue; }
     else { dcfg = null; rng = Math.random; hueBase = Math.random() * 360; }
     timeLeft = TIME_START;
@@ -591,7 +593,8 @@ window.Ads = (function () {
     }
 
     let placed;
-    if (Math.abs(m.off) < PERFECT) {
+    // Shape changes get a slightly wider perfect window, since the outlines don't match.
+    if (Math.abs(m.off) < (m.shift ? PERFECT * 1.7 : PERFECT)) {
       combo++; perfects++; bestChain = Math.max(bestChain, combo);
       placed = m.shift ? translate(m.local, top.cx, top.cz) : top.mp; // clean shape, centred on the floor below
       if (combo >= 3 && area(placed) < START_AREA) {
