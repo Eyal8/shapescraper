@@ -253,10 +253,11 @@ button { font: inherit; color: inherit; }
 .page { flex: 0 0 100%; min-width: 0; box-sizing: border-box; padding: 2px; display: flex; flex-direction: column; gap: 12px; }
 .page-main { display: flex; flex-direction: column; gap: 12px; flex: 1; }
 .page .play { margin-top: auto; min-height: 62px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 10px; }
-.page-main, .page-lock { min-height: 172px; }
+.page-main, .page-lock { min-height: 182px; }
 .best { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; }
 .best .big { font-size: 34px; }
 .best .sub { font-size: 12px; color: var(--ink-soft); text-wrap: balance; }
+.best .buy-all { padding: 4px 8px; font-size: 10px; color: var(--gold); }
 .page-lock { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
 .lock-badge { width: 48px; height: 48px; border-radius: 50%; background: var(--chip); border: 1px solid var(--chip-line); display: grid; place-items: center; }
 .lock-badge .lock { width: 20px; height: 20px; }
@@ -297,7 +298,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <section class="page" data-page="endless" aria-label="Endless">
         <div class="page-main">
           <div class="shapes" data-picker role="radiogroup" aria-label="Shape"></div>
-          <div class="best"><span class="label" data-best-label>Best</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span></div>
+          <div class="best"><span class="label" data-best-label>Best</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span><button type="button" class="link-btn buy-all" data-buy-all hidden>Unlock all shapes</button></div>
         </div>
         <div class="page-lock" hidden>
           <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
@@ -310,7 +311,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <section class="page" data-page="time" aria-label="Time Attack">
         <div class="page-main">
           <div class="shapes" data-picker role="radiogroup" aria-label="Shape"></div>
-          <div class="best"><span class="label" data-best-label>Best in 60 seconds</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span></div>
+          <div class="best"><span class="label" data-best-label>Best in 60 seconds</span><span class="big" data-best>0</span><span class="sub" data-best-sub hidden></span><button type="button" class="link-btn buy-all" data-buy-all hidden>Unlock all shapes</button></div>
         </div>
         <div class="page-lock" hidden>
           <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
@@ -422,83 +423,98 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
 <script>
-// ---------- Remove Ads: a one-time (non-consumable) purchase ----------
+// ---------- In-app purchases: Remove Ads and Unlock All Shapes, both one-time (non-consumable) ----------
 // Apple and Google keep the ownership record, tied to the player's Apple ID / Google account.
 // The app re-reads it from the store on every launch (this also catches refunds) and on "Restore purchases".
 // localStorage only caches the answer so the game knows instantly at launch, even offline.
 window.Store = (function () {
-  const PRODUCT = 'shapescraper_no_ads';
+  const PRODUCTS = {
+    noAds: { id: 'shapescraper_no_ads', price: '$3.99', cache: 'ss_noads' },
+    allShapes: { id: 'shapescraper_unlock_all', price: '$1.99', cache: 'ss_allshapes' }
+  };
   const cap = window.Capacitor;
   const platform = cap && cap.getPlatform ? cap.getPlatform() : 'web';
   const native = platform === 'android' || platform === 'ios';
   const NP = native && window.capacitorExports ? window.capacitorExports.registerPlugin('NativePurchases') : null;
-  let noAds = false, price = '$3.99';
-  try { noAds = localStorage.getItem('ss_noads') === '1'; } catch (e) {}
+  const owns = {};
+  for (const k in PRODUCTS) { try { owns[k] = localStorage.getItem(PRODUCTS[k].cache) === '1'; } catch (e) { owns[k] = false; } }
 
-  function set(v) {
-    noAds = !!v;
-    try { localStorage.setItem('ss_noads', noAds ? '1' : '0'); } catch (e) {}
+  function set(k, v) {
+    owns[k] = !!v;
+    try { localStorage.setItem(PRODUCTS[k].cache, owns[k] ? '1' : '0'); } catch (e) {}
     document.dispatchEvent(new Event('store:change'));
   }
-  const owned = (t) => t.productIdentifier === PRODUCT && !t.revocationDate &&
-    (platform !== 'android' || String(t.purchaseState) === '1');
+  const keyFor = (productId) => Object.keys(PRODUCTS).find((k) => PRODUCTS[k].id === productId);
+  const valid = (t) => !t.revocationDate && (platform !== 'android' || String(t.purchaseState) === '1');
 
   // Ask the store what this account owns. Only a successful answer changes the cached state.
   async function refresh() {
-    if (!NP) return noAds;
+    if (!NP) return;
     try {
       const r = await NP.getPurchases({ productType: 'inapp', onlyCurrentEntitlements: true });
       const list = (r && r.purchases) || [];
+      const found = {};
       for (const t of list) {
+        const k = keyFor(t.productIdentifier);
+        if (!k || !valid(t)) continue;
+        found[k] = true;
         // Google refunds purchases that are not acknowledged within 3 days.
-        if (platform === 'android' && owned(t) && t.isAcknowledged === false && t.purchaseToken) {
+        if (platform === 'android' && t.isAcknowledged === false && t.purchaseToken) {
           try { await NP.acknowledgePurchase({ purchaseToken: t.purchaseToken }); } catch (e) {}
         }
       }
-      set(list.some(owned));
-    } catch (e) { /* offline or store unavailable: keep the cached answer */ }
-    return noAds;
+      for (const k in PRODUCTS) set(k, !!found[k]);
+    } catch (e) { /* offline or store unavailable: keep the cached answers */ }
   }
 
-  async function loadPrice() {
+  async function loadPrices() {
     if (!NP) return;
     try {
-      const r = await NP.getProducts({ productIdentifiers: [PRODUCT], productType: 'inapp' });
-      const p = r && r.products && r.products[0];
-      if (p && p.priceString) { price = p.priceString; document.dispatchEvent(new Event('store:change')); }
+      const r = await NP.getProducts({ productIdentifiers: Object.values(PRODUCTS).map((p) => p.id), productType: 'inapp' });
+      for (const p of (r && r.products) || []) {
+        const k = keyFor(p.identifier || p.productIdentifier || p.id);
+        if (k && p.priceString) PRODUCTS[k].price = p.priceString;
+      }
+      document.dispatchEvent(new Event('store:change'));
     } catch (e) {}
   }
 
   // Returns 'bought', 'cancelled' or 'error'.
-  async function buy() {
-    if (!NP) { set(true); return 'bought'; } // browser preview: simulated purchase
+  async function buy(k) {
+    if (!NP) { set(k, true); return 'bought'; } // browser preview: simulated purchase
     try {
-      const t = await NP.purchaseProduct({ productIdentifier: PRODUCT, productType: 'inapp', isConsumable: false, autoAcknowledgePurchases: true });
-      if (t && owned(t)) { set(true); return 'bought'; }
+      const t = await NP.purchaseProduct({ productIdentifier: PRODUCTS[k].id, productType: 'inapp', isConsumable: false, autoAcknowledgePurchases: true });
+      if (t && keyFor(t.productIdentifier) === k && valid(t)) { set(k, true); return 'bought'; }
       await refresh();
-      return noAds ? 'bought' : 'error';
+      return owns[k] ? 'bought' : 'error';
     } catch (e) {
       const msg = String((e && (e.message || e.code)) || e).toLowerCase();
       if (msg.includes('cancel')) return 'cancelled';
       await refresh(); // e.g. "already owned"
-      return noAds ? 'bought' : 'error';
+      return owns[k] ? 'bought' : 'error';
     }
   }
 
-  // Returns true when Remove Ads is owned after restoring.
+  // Returns the list of owned product keys after restoring.
   async function restore() {
-    if (!NP) return noAds;
-    try { await NP.restorePurchases(); } catch (e) {}
-    return refresh();
+    if (NP) { try { await NP.restorePurchases(); } catch (e) {} await refresh(); }
+    return Object.keys(owns).filter((k) => owns[k]);
   }
 
   if (NP) {
     try { NP.addListener('transactionUpdated', () => refresh()); } catch (e) {}
-    refresh(); loadPrice();
+    refresh(); loadPrices();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   }
 
-  return { noAds: () => noAds, price: () => price, buy, restore, refresh, isNative: native };
+  return {
+    owns: (k) => !!owns[k],
+    noAds: () => !!owns.noAds,
+    allShapes: () => !!owns.allShapes,
+    price: (k) => PRODUCTS[k || 'noAds'].price,
+    buy: (k) => buy(k || 'noAds'),
+    restore, refresh, isNative: native
+  };
 })();
 </script>
 <script>
@@ -538,7 +554,8 @@ window.Ads = (function () {
           if (t.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
         } catch (e) {}
       }
-      if (!adFree()) { preload('interstitial'); preload('rewarded'); }
+      preload('rewarded');
+      if (!adFree()) preload('interstitial');
     } catch (e) { console.warn('AdMob init failed', e); }
   }
 
@@ -596,8 +613,9 @@ window.Ads = (function () {
 
   const adFree = () => !!(window.Store && window.Store.noAds());
 
-  async function showRewarded() {
-    if (adFree()) return true; // Remove Ads makes rewards free
+  // free: true for rewards that Remove Ads makes free (continue, past days); unlock ads still play for everyone.
+  async function showRewarded(opts) {
+    if (adFree() && opts && opts.free) return true;
     if (!AdMob) { const ok = await simulate(5); if (ok) lastRewarded = Date.now(); return ok; }
     if (!ready.rewarded) { await preload('rewarded'); if (!ready.rewarded) return false; }
     ready.rewarded = false;
@@ -696,7 +714,7 @@ window.Ads = (function () {
   function unlockedSet() { return [...new Set([...store.get('ss_unlocked', ['square']), ...store.get('ss_unlocked_time', [])])]; }
   const prevShape = (s) => SHAPES[SHAPES.indexOf(s) - 1];
   function isUnlocked(s) {
-    if (s === 'square' || unlockedSet().includes(s)) return true;
+    if (s === 'square' || unlockedSet().includes(s) || (window.Store && window.Store.allShapes())) return true;
     const prev = prevShape(s);
     return bestOf('endless', prev) >= UNLOCK.endless[s] || bestOf('time', prev) >= UNLOCK.time[s];
   }
@@ -1142,7 +1160,8 @@ window.Ads = (function () {
   const shapeBtns = document.querySelectorAll('.shape');
   const segBtns = document.querySelectorAll('.seg-btn');
   const pageEl = (m) => document.querySelector('.page[data-page="' + m + '"]');
-  const adNote = () => (window.Store && window.Store.noAds()) ? 'Ad-free' : 'Watch a short ad';
+  // Continue and past days are free with Remove Ads; unlocks always offer an (optional) ad.
+  const adNote = (free) => (free && window.Store && window.Store.noAds()) ? 'Ad-free' : 'Watch a short ad';
 
   function weekStrip() {
     const today = new Date(); today.setHours(12, 0, 0, 0);
@@ -1211,11 +1230,14 @@ window.Ads = (function () {
         big.textContent = bestOf(m, prev) + ' / ' + UNLOCK[m][shape];
         sub.textContent = SHAPE_NAMES[prev] + ' ' + MODES[m] + ' · or ' + UNLOCK[other][shape] + ' in ' + MODES[other];
         sub.hidden = false;
+        page.querySelector('[data-buy-all]').hidden = false;
+        page.querySelector('[data-buy-all]').textContent = 'Unlock all shapes · ' + (window.Store ? window.Store.price('allShapes') : '$1.99');
         play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>' + adNote() + '</small>';
       } else {
         label.textContent = m === 'time' ? 'Best in 60 seconds' : 'Best';
         big.textContent = bestOf(m, shape);
         sub.hidden = true;
+        page.querySelector('[data-buy-all]').hidden = true;
         play.textContent = 'Play';
       }
     });
@@ -1335,7 +1357,7 @@ window.Ads = (function () {
     $('noAdsBtn').textContent = owned ? 'Ads removed' : 'Remove ads · ' + (st ? st.price() : '$3.99');
     $('noAdsBtn').disabled = !!owned;
     $('noAdsBtn').style.textDecoration = owned ? 'none' : '';
-    $('restoreBtn').hidden = !!owned || !(st && st.isNative);
+    $('restoreBtn').hidden = !(st && st.isNative) || (owned && st.allShapes());
   }
   document.addEventListener('store:change', () => { if (state === 'menu') renderMenu(); });
 
@@ -1419,13 +1441,13 @@ window.Ads = (function () {
       : isToday ? 'Not played yet' : 'Not played · past days don’t count toward streaks';
     const cp = $('calPlay');
     if (isToday || rec.unlocked || rec.played || (window.Store && window.Store.noAds())) cp.innerHTML = rec.done ? 'Play again' : 'Play';
-    else cp.innerHTML = 'Unlock this day<small>' + adNote() + '</small>';
+    else cp.innerHTML = 'Unlock this day<small>' + adNote(true) + '</small>';
   }
   async function playDay() {
     if (busy) return;
     const rec = dayRec(calSel), isToday = calSel === dayKey();
     if (!isToday && !rec.unlocked && !rec.played && !(window.Store && window.Store.noAds())) {
-      if (!(await rewarded())) return;
+      if (!(await rewarded(true))) return;
       rec.unlocked = true; saveDay(calSel, rec);
     }
     $('calendar').hidden = true;
@@ -1451,12 +1473,21 @@ window.Ads = (function () {
     else if (r === 'error') showPopup('Purchase did not go through', 1800);
     renderMenu();
   });
+  document.querySelectorAll('[data-buy-all]').forEach((b) => b.addEventListener('click', async () => {
+    if (busy || !window.Store || window.Store.allShapes()) return;
+    busy = true;
+    const r = await window.Store.buy('allShapes');
+    busy = false;
+    if (r === 'bought') { showPopup('All shapes unlocked!', 1800); celebrate(false); }
+    else if (r === 'error') showPopup('Purchase did not go through', 1800);
+    renderMenu();
+  }));
   $('restoreBtn').addEventListener('click', async () => {
     if (busy || !window.Store) return;
     busy = true;
-    const ok = await window.Store.restore();
+    const owned = await window.Store.restore();
     busy = false;
-    showPopup(ok ? 'Purchase restored' : 'No purchase found for this account', 2000);
+    showPopup(owned.length ? (owned.length > 1 ? 'Purchases restored' : 'Purchase restored') : 'No purchases found for this account', 2000);
     renderMenu();
   });
 
@@ -1469,10 +1500,10 @@ window.Ads = (function () {
   }
 
   // Shows a rewarded ad; if none could be shown or it was closed early, says so instead of failing silently.
-  async function rewarded() {
+  async function rewarded(free) {
     busy = true;
     let ok = false;
-    try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
+    try { ok = await window.Ads.showRewarded({ free: !!free }); } catch (e) { ok = false; }
     busy = false;
     if (!ok) showPopup('No ad available right now. Try again in a moment.', 2200);
     return ok;
@@ -1569,7 +1600,7 @@ window.Ads = (function () {
     offerArgs = args;
     const timeUp = mode === 'time' && args.reason === 'time';
     $('offerScore').textContent = timeUp ? "Time's up at " + score : 'Score ' + score;
-    $('offerYes').innerHTML = (timeUp ? '+' + TIME_CONTINUE + ' seconds' : 'Continue') + '<small>' + adNote() + '</small>';
+    $('offerYes').innerHTML = (timeUp ? '+' + TIME_CONTINUE + ' seconds' : 'Continue') + '<small>' + adNote(true) + '</small>';
     scoreEl.hidden = true; $('sub').hidden = true;
     $('offer').hidden = false;
     $('offerProg').style.strokeDasharray = RING;
@@ -1593,7 +1624,7 @@ window.Ads = (function () {
   async function acceptOffer() {
     if (!offerArgs || busy) return;
     stopOffer();
-    const ok = await rewarded();
+    const ok = await rewarded(true);
     if (!ok) { setTimeout(declineOffer, 1600); return; }
     offerArgs = null;
     $('offer').hidden = true;
