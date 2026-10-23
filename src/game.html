@@ -264,10 +264,11 @@ button { font: inherit; color: inherit; }
 .lock-line { font-size: 12px; color: var(--ink-soft); text-wrap: balance; max-width: 260px; }
 .meter { width: min(220px, 80%); height: 6px; border-radius: 999px; background: rgba(255,255,255,0.14); overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--gold); border-radius: inherit; }
-.daily-goal .goal-text { flex: 1; min-width: 0; }
+.daily-goal { position: relative; justify-content: center; }
+.daily-goal .goal-text { flex: 0 1 auto; min-width: 0; }
 .daily-goal .goal-text span { display: block; margin-top: 2px; text-wrap: balance; }
 .daily-goal .goal-text .goal-kicker { margin: 0 0 3px; font-size: 10px; color: var(--ink-soft); }
-.streak-pill { flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(255,209,102,0.16); color: var(--gold); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.streak-pill { position: absolute; top: 8px; right: 8px; flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(255,209,102,0.16); color: var(--gold); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 .daily-top .link-btn { padding: 0; font-size: 11px; }
 .week { cursor: pointer; }
 .cal-detail span { display: block; text-wrap: balance; }
@@ -1191,7 +1192,7 @@ window.Ads = (function () {
         $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
         $('dailyShape').textContent = SHAPE_NAMES[cfg.shape];
         $('dailyGoal').textContent = rec.done ? 'Complete · best ' + rec.best : goalText(cfg);
-        $('dailyStreak').textContent = st + (st === 1 ? ' day' : ' days');
+        $('dailyStreak').textContent = 'Streak ' + st;
         $('dailyStreak').hidden = !st;
         $('week').innerHTML = weekStrip();
         play.textContent = rec.done ? 'Play again' : 'Play today';
@@ -1747,7 +1748,7 @@ window.Ads = (function () {
       start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
-      unlockAll() { SHAPES.forEach((x) => { unlock(x, 'endless'); unlock(x, 'time'); }); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, bestOf('endless', 'square'))); renderMenu(); },
+      unlockAll() { SHAPES.forEach((x) => { unlock(x, 'endless'); unlock(x, 'time'); }); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, MODE_UNLOCK.daily, bestOf('endless', 'square'))); renderMenu(); },
       calendar() { openCalendar(); },
       setMode(m) { setMode(m); },
       playDate(k) { mode = 'daily'; runDate = k; start(); },
