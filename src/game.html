@@ -100,6 +100,12 @@ body { margin: 0; }
 #adSim .adbox { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 320px; }
 #adSim p { margin: 0; color: rgba(255,255,255,0.7); font-size: 13px; line-height: 1.5; }
 #adClose { pointer-events: auto; }
+.link-btn {
+  pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 10px 12px;
+  color: var(--ink-soft); font: 500 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.link-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 #adClose:disabled { opacity: 0.4; }
 @media (prefers-reduced-motion: reduce) { .cta { animation: none; } body { transition: none; } }
 </style>
@@ -115,6 +121,7 @@ body { margin: 0; }
     <div class="label">Best <span id="menuBest">0</span></div>
     <div class="cta">Tap to start</div>
     <div class="label">Tap to drop · line it up for perfects</div>
+    <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
   </div>
 
   <div class="panel" id="over" hidden>
@@ -127,6 +134,7 @@ body { margin: 0; }
       <button type="button" class="btn primary" id="continueBtn">Continue from <span id="contScore">0</span><small>Watch a short ad</small></button>
       <button type="button" class="btn" id="againBtn">Play again</button>
     </div>
+    <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
   </div>
 </div>
 <button id="mute" type="button" aria-label="Toggle sound">SND</button>
@@ -158,14 +166,17 @@ window.Ads = (function () {
   const ids = CONFIG[platform] || {};
   const ready = { interstitial: false, rewarded: false };
   let lastInterstitial = Date.now(); // never right at launch
+  let privacyRequired = false; // UMP says players must be able to reopen ad privacy choices
 
   async function init() {
     if (!AdMob) return;
     try {
       await AdMob.initialize({ initializeForTesting: CONFIG.testing });
       try {
-        const info = await AdMob.requestConsentInfo();
-        if (info.isConsentFormAvailable && info.status === 'REQUIRED') await AdMob.showConsentForm();
+        let info = await AdMob.requestConsentInfo();
+        if (info.isConsentFormAvailable && info.status === 'REQUIRED') info = await AdMob.showConsentForm();
+        privacyRequired = info && info.privacyOptionsRequirementStatus === 'REQUIRED';
+        document.dispatchEvent(new Event('ads:privacy'));
       } catch (e) {}
       if (platform === 'ios') {
         try {
@@ -261,7 +272,16 @@ window.Ads = (function () {
   }
 
   init();
-  return { showRewarded, maybeInterstitial, isOpen: () => !document.getElementById('adSim').hidden };
+  async function showPrivacyOptions() {
+    if (!AdMob) return;
+    try { await AdMob.showPrivacyOptionsForm(); } catch (e) {}
+  }
+
+  return {
+    showRewarded, maybeInterstitial, showPrivacyOptions,
+    privacyRequired: () => privacyRequired,
+    isOpen: () => !document.getElementById('adSim').hidden
+  };
 })();
 </script>
 <script>
@@ -484,6 +504,12 @@ window.Ads = (function () {
     state = 'playing';
     spawnMoving();
   }
+
+  const privacyBtns = document.querySelectorAll('.privacy-btn');
+  const syncPrivacyBtns = () => privacyBtns.forEach((b) => { b.hidden = !window.Ads.privacyRequired(); });
+  document.addEventListener('ads:privacy', syncPrivacyBtns);
+  syncPrivacyBtns();
+  privacyBtns.forEach((b) => b.addEventListener('click', () => window.Ads.showPrivacyOptions()));
 
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
   $('continueBtn').addEventListener('click', () => { initAudio(); continueRun(); });
