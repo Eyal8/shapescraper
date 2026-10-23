@@ -37,6 +37,10 @@ body {
   font-family: var(--mono);
 }
 [hidden] { display: none !important; }
+#grainFx {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: overlay; opacity: 0.32;
+  background-size: 120px 120px; image-rendering: pixelated;
+}
 #devPalette {
   position: fixed; left: 12px; top: calc(12px + env(safe-area-inset-top)); z-index: 50;
   padding: 7px 12px; border: 1px solid rgba(255,255,255,0.4); border-radius: 999px;
@@ -292,6 +296,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 
 <canvas id="c" aria-label="Shapescraper game"></canvas>
 <canvas id="fx" aria-hidden="true"></canvas>
+<div id="grainFx" hidden aria-hidden="true"></div>
 <div class="hud">
   <div id="score" hidden>0</div>
   <div id="sub" hidden></div>
@@ -914,10 +919,28 @@ window.Ads = (function () {
     return g;
   }
   function meshFor(mp, cx, cz, color) {
-    const m = new THREE.Mesh(footprintGeo(mp, cx, cz), new THREE.MeshLambertMaterial({ color }));
+    const m = new THREE.Mesh(footprintGeo(mp, cx, cz), new THREE.MeshLambertMaterial({ color, map: blockMap() }));
     m.userData.ownGeo = true;
     world.add(m);
     return m;
+  }
+  // Grainy blocks (palettes with texture: 'grain'): a speckle map multiplied into the block colour.
+  let grainTex = null;
+  function blockMap() {
+    if (!pal || pal.texture !== 'grain') return null;
+    if (!grainTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const x = c.getContext('2d'), img = x.createImageData(256, 256);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = 255 - Math.pow(Math.random(), 2.2) * 75; // mostly bright, some dark speckles
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+      }
+      x.putImageData(img, 0, 0);
+      grainTex = new THREE.CanvasTexture(c);
+      grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping; grainTex.repeat.set(0.16, 0.16); grainTex.minFilter = THREE.NearestFilter; grainTex.generateMipmaps = false;
+      grainTex.magFilter = THREE.NearestFilter;
+    }
+    return grainTex;
   }
   function removeMesh(m) { world.remove(m); m.material.dispose(); if (m.userData.ownGeo) m.geometry.dispose(); }
 
@@ -938,6 +961,7 @@ window.Ads = (function () {
   const KLEIN = '#4100f5', CITRIC = '#cdf564', AQUA = '#9bf0e1', FUCH = '#f037a5', TANG = '#ff4632', K_BLACK = '#191414';
   // fine film grain laid over the background gradient
   const GRAIN = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`;
+  const PATH = ['#f39ac8', '#9b8de3', '#2f6fe0', '#7b3aa3', '#e5323f', '#f37a1f', '#ffc21f', '#f0353a', '#f472a6', '#3b6fd6', '#1b7d82', '#1c9446'];
   const CMY = ['#22e4ff', '#2433ff', '#ff2fa8', '#f2222e', '#ffe600'];
   const HOLO = ['#8af3ff', '#b9a4ff', '#ff9fd6', '#ffe98a', '#9dffc8'];
   const GHOST = 'drop-shadow(9px 0 0 rgba(242,34,46,0.9)) drop-shadow(-9px 3px 0 rgba(34,228,255,0.85)) drop-shadow(0 -7px 0 rgba(255,230,0,0.8))';
@@ -991,6 +1015,10 @@ window.Ads = (function () {
     posterLime:   { name: 'Poster · lime',  stops: ['#6f9a38', '#a8e83a', '#ffe600', '#fff6c8'], period: 32, bg: ['#454c35', '#7f9c3c', '#c4f53c'], grain: true },
     posterPink:   { name: 'Poster · pink',  stops: ['#e8409a', '#f27ea6', '#f6c9b8', '#f9e6d8'], period: 32, bg: ['#3a3c9c', '#c44aa6', '#f0a0b4'], grain: true },
     posterBlue:   { name: 'Poster · blue',  stops: ['#2a7891', '#3a9fd0', '#9fd2f0', '#f4f7fb'], period: 32, bg: ['#30475a', '#0f6670', '#4ab2e6'], grain: true },
+    pathLight:    { name: 'Path · paper',   stops: PATH, period: 60, bg: ['#efeee9', '#e2e0d9'], ink: '#26262b', texture: 'grain', grain: true },
+    pathDark:     { name: 'Path · charcoal', stops: PATH, period: 60, bg: ['#2c2b31', '#141417'], texture: 'grain', grain: true },
+    pathWarm:     { name: 'Path · warm',    stops: ['#7b3aa3', '#e5323f', '#f37a1f', '#ffc21f', '#f0353a', '#f472a6'], period: 36, bg: ['#efeee9', '#e2e0d9'], ink: '#26262b', texture: 'grain', grain: true },
+    pathCool:     { name: 'Path · cool',    stops: ['#f39ac8', '#9b8de3', '#2f6fe0', '#1b7d82', '#1c9446'], period: 36, bg: ['#efeee9', '#e2e0d9'], ink: '#26262b', texture: 'grain', grain: true },
     posterCoral:  { name: 'Poster · coral', stops: ['#e8435a', '#f2836a', '#f6b483', '#f4dcb8'], period: 32, bg: ['#4a3440', '#d8436a', '#f7a86a'], grain: true }
   };
   const devPalettes = !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -998,6 +1026,17 @@ window.Ads = (function () {
   if (devPalettes) { try { const k = localStorage.getItem('ss_dev_palette'); if (PALETTES[k]) pal = PALETTES[k]; } catch (e) {} }
   function applyBgVars() {
     const cv = document.getElementById('c'); if (cv) cv.style.filter = pal.ghost || '';
+    const gf = document.getElementById('grainFx');
+    if (gf) {
+      gf.hidden = pal.texture !== 'grain';
+      if (!gf.hidden && !gf.style.backgroundImage) { // screen-space film grain, generated once
+        const c = document.createElement('canvas'); c.width = c.height = 240;
+        const x = c.getContext('2d'), img = x.createImageData(240, 240);
+        for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+        x.putImageData(img, 0, 0);
+        gf.style.backgroundImage = `url(${c.toDataURL()})`;
+      }
+    }
     if (pal.ink) document.documentElement.style.setProperty('--ink', pal.ink); else document.documentElement.style.removeProperty('--ink');
     if (pal.stops || pal.pairs) return;
     const st = document.documentElement.style, [s1, l1, s2, l2] = pal.bg;
@@ -1043,6 +1082,7 @@ window.Ads = (function () {
   function setPalette(key) {
     pal = PALETTES[key]; applyBgVars();
     try { localStorage.setItem('ss_dev_palette', key); } catch (e) {}
+    world.children.forEach((m) => { if (m.material) { m.material.map = blockMap(); m.material.needsUpdate = true; } });
     stack.forEach((l, i) => l.mesh.material.color.copy(colorAt(i)));
     if (moving) moving.mesh.material.color.copy(colorAt(moving.lvl));
     if (pedestal) pedestal.material.color.copy(colorAt(0).offsetHSL(0, -0.1, -0.12));

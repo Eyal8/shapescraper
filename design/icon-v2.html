@@ -56,12 +56,26 @@ const ROSE = {
   25: { grain: 1, bg: 'linear-gradient(180deg, #3a3c9c, #c44aa6 55%, #f0a0b4)', star: ['#f6c9b8', '#fbeee4'], heart: ['#e8409a', '#f27ea6'], circle: ['#f27ea6', '#f6c9b8'] },
   26: { grain: 1, bg: 'linear-gradient(180deg, #30475a, #0f6670 50%, #4ab2e6)', star: ['#9fd2f0', '#f4f7fb'], heart: ['#2a7891', '#3a9fd0'], circle: ['#3a9fd0', '#bfe3f7'] },
   27: { grain: 1, bg: 'linear-gradient(180deg, #4a3440, #d8436a 55%, #f7a86a)', star: ['#f6b483', '#f8e6c8'], heart: ['#e8435a', '#f2836a'], circle: ['#f2836a', '#f6c49a'] },
+  // grainy ribbon palette: textured towers on paper or charcoal
+  28: { tex: 1, bg: 'linear-gradient(180deg, #efeee9, #e2e0d9)', star: ['#f37a1f', '#ffc21f'], heart: ['#2f6fe0', '#f39ac8'], circle: ['#1c9446', '#1b7d82'] },
+  29: { tex: 1, bg: 'linear-gradient(180deg, #2c2b31, #141417)', star: ['#f37a1f', '#ffc21f'], heart: ['#7b3aa3', '#f472a6'], circle: ['#3b6fd6', '#9b8de3'] },
+  30: { tex: 1, bg: 'linear-gradient(180deg, #efeee9, #e2e0d9)', star: ['#e5323f', '#ffc21f'], heart: ['#7b3aa3', '#e5323f'], circle: ['#f0353a', '#f472a6'] },
+  31: { tex: 1, bg: 'linear-gradient(180deg, #efeee9, #e2e0d9)', star: ['#9b8de3', '#f39ac8'], heart: ['#2f6fe0', '#9b8de3'], circle: ['#1c9446', '#1b7d82'] },
   // used by glitch modes 2 and 4: one print colour per tower
   cmy: { bg: '#000', star: ['#ffe600', '#fff27a'], heart: ['#ff2fa8', '#ff6fc2'], circle: ['#22e4ff', '#7af0ff'] }
 };
 const glitch = q.get('glitch');
 const rose = ROSE[q.get('rose')] || (q.get('glitch') === '2' ? ROSE.cmy : null);
 document.body.style.background = rose ? rose.bg : BGS[bg];
+if (rose && rose.tex) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d'), img = x.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+  x.putImageData(img, 0, 0);
+  const gr = document.createElement('div');
+  gr.style.cssText = `position:fixed;inset:0;z-index:5;pointer-events:none;mix-blend-mode:overlay;opacity:.35;background:url(${c.toDataURL()});background-size:256px 256px`;
+  document.body.appendChild(gr);
+}
 if (rose && rose.grain) {
   const gr = document.createElement('div');
   gr.style.cssText = `position:fixed;inset:0;z-index:5;pointer-events:none;mix-blend-mode:soft-light;opacity:.9;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`;
@@ -118,9 +132,21 @@ function layerGeo(kind) {
 const mat = (h, s, l) => new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(((h % 360) + 360) % 360 / 360, s, l) });
 // A tower like real play: most drops perfect, a few misses where the block shrinks and shifts.
 // misses: {layerIndex: [shrink, dx, dz]}; hue ramps from h0 (bottom) to h1 (top).
+let speckleTex = null;
+function speckle() {
+  if (!speckleTex) {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d'), img = x.createImageData(256, 256);
+    for (let i = 0; i < img.data.length; i += 4) { const v = 255 - Math.pow(Math.random(), 2.2) * 90; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    x.putImageData(img, 0, 0);
+    speckleTex = new THREE.CanvasTexture(c); speckleTex.wrapS = speckleTex.wrapT = THREE.RepeatWrapping;
+    speckleTex.repeat.set(0.35, 0.35); speckleTex.magFilter = speckleTex.minFilter = THREE.NearestFilter; speckleTex.generateMipmaps = false;
+  }
+  return speckleTex;
+}
 function tower(kind, x, z, layers, h0, h1, scale, misses = {}, sink = 0) {
   const rc = rose && (rose[kind] || rose.star);
-  const hexMat = (t, dl) => new THREE.MeshLambertMaterial({ color: new THREE.Color(rc[0]).lerp(new THREE.Color(rc[1]), t).offsetHSL(0, 0, dl) });
+  const hexMat = (t, dl) => new THREE.MeshLambertMaterial({ color: new THREE.Color(rc[0]).lerp(new THREE.Color(rc[1]), t).offsetHSL(0, 0, dl), map: rose && rose.tex ? speckle() : null });
   const g = new THREE.Group();
   const base = new THREE.Mesh(layerGeo(kind), rc ? hexMat(0, -0.08) : mat(h0, 0.65, 0.5));
   base.scale.set(scale, 40, scale); base.position.y = -40; g.add(base);
