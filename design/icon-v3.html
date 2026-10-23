@@ -13,7 +13,8 @@ canvas{position:fixed;inset:0;width:100%;height:100%}
 const q = new URLSearchParams(location.search);
 const shapes = (q.get('shapes') || 'circle,square,star').split(',');
 const sky = q.get('sky');
-document.body.style.background = sky === null
+const mode = q.get('mode') || 'icon'; // icon | fg (transparent, padded for Android adaptive icons) | bg (sky only)
+if (mode === 'fg') document.body.style.background = 'transparent'; else document.body.style.background = sky === null
   ? 'linear-gradient(180deg,hsl(28 90% 86%),hsl(350 70% 74%))'           // the current icon's sky
   : `linear-gradient(180deg, hsl(${sky} 60% 86%), hsl(${+sky + 35} 48% 64%))`; // the game's sky at another hue
 
@@ -64,12 +65,14 @@ function tower(kind, x, z, layers, hue, size, cuts, top, topDir) {
 }
 const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2]; // screen left/right, depth (+ toward the viewer)
 const [left, mid, right] = shapes;
+if (mode !== 'bg') {
 // middle-back: tallest, top block far off (like the current icon); left: medium, half off; right: short, perfect
 tower(mid, ...at(0.3, -2.6), 8, 195, 1.6, { 2: [0.9, 0.12, 0], 5: [0.88, 0, 0.14] }, 0.55, [-1, 0]);
-tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, 0.3, [-0.72, 0.72]);   // slid toward the viewer's left so the overhang shows
+tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, 0.3, [1, 0]);   // slid toward the viewer's right-front
 tower(right, ...at(4.3, 1.4), 3, 20, 1.5, { 1: [0.92, -0.1, 0] }, 0, [0, 0]);
+}
 
-const view = 16, cy = 4.2;
+const view = mode === 'fg' ? 23 : 16, cy = 4.2;
 const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
 cam.position.set(12, cy + 12, 12); cam.lookAt(0, cy, 0);
 r.render(scene, cam);
