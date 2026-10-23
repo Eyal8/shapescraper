@@ -50,7 +50,7 @@ const col = (h, l = 0.62, s = 0.62) => new THREE.MeshLambertMaterial({ color: ne
 
 // A tower: base column, stacked layers with a few slices on the way up, and a top block that landed
 // `top` of a block-width off centre (0 = perfect, 0.5 = half hanging over the edge).
-function tower(kind, x, z, layers, hue, size, cuts, top, topDir) {
+function tower(kind, x, z, layers, hue, size, cuts, top, topDir, fall) {
   const g = new THREE.Group();
   const base = new THREE.Mesh(layerGeo(kind), col(hue, 0.56, 0.5)); base.scale.set(size, 30, size); base.position.y = -30; g.add(base);
   let s = size, ox = 0, oz = 0;
@@ -61,6 +61,8 @@ function tower(kind, x, z, layers, hue, size, cuts, top, topDir) {
   const t = new THREE.Mesh(layerGeo(kind), col(hue + layers * 13, 0.66));
   const off = top * 2 * s;
   t.scale.set(s, 1, s); t.position.set(ox + topDir[0] * off, layers, oz + topDir[1] * off); g.add(t);
+  // fall = [drop, tiltX, tiltZ]: the top block missed and is tumbling down past the tower
+  if (fall) { t.position.y -= fall[0]; t.rotation.x = fall[1]; t.rotation.z = fall[2]; }
   g.position.set(x, 0, z); scene.add(g);
 }
 const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2]; // screen left/right, depth (+ toward the viewer)
@@ -68,8 +70,22 @@ const [left, mid, right] = shapes;
 if (mode !== 'bg') {
 // middle-back: tallest, top block far off (like the current icon); left: medium, half off; right: short, perfect
 tower(mid, ...at(0.3, -2.6), 8, 195, 1.6, { 2: [0.9, 0.12, 0], 5: [0.88, 0, 0.14] }, 0.55, [-1, 0]);
-tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, 0.3, [1, 0]);   // slid toward the viewer's right-front
-tower(right, ...at(4.3, 1.4), 3, 20, 1.5, { 1: [0.92, -0.1, 0] }, 0, [0, 0]);
+// ?v= picks how the circle (left) and star (right) top blocks landed
+const V = {
+  0: { c: [0.3, [1, 0]], s: [0, [0, 0]] },                                        // first version: circle half off, star perfect
+  1: { c: [0, [0, 0]], s: [0.3, [0.85, -0.55]] },                                    // circle perfect, star half off toward the viewer
+  2: { c: [0, [0, 0]], s: [0.62, [0.85, -0.55], [0.9, 0.45, -0.35]] },               // star just slipped off the edge, tipping
+  3: { c: [0, [0, 0]], s: [0.95, [0.85, -0.55], [2.6, 0.9, -0.7]] },                 // star in free fall, well below the top
+  4: { c: [0.12, [1, 0]], s: [0.8, [0.85, -0.55], [1.6, 0.6, -0.5]] },               // circle a touch off, star falling
+  5: { c: [0, [0, 0]], s: [0.62, [0.85, -0.55]] },                                   // star hanging far over the edge
+  6: { c: [0, [0, 0]], s: [0.95, [0.85, -0.55], [2.6, 0.9, -0.7]], chip: true }      // free fall + a sliced chip off the square
+}[q.get('v') || 0];
+tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, V.c[0], V.c[1], V.c[2]);
+tower(right, ...at(4.3, 1.4), 3, 20, 1.5, { 1: [0.92, -0.1, 0] }, V.s[0], V.s[1], V.s[2]);
+if (V.chip) { // the overhang sliced off the square's top block, falling (like the current icon)
+  const chip = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1, 1.2), col(195 + 8 * 13, 0.62));
+  const [cx, cz] = at(-1.6, -1.2); chip.position.set(cx, 5.6, cz); chip.rotation.set(0.25, 0.3, 0.5); scene.add(chip);
+}
 }
 
 const view = mode === 'fg' ? 23 : 16, cy = 4.2;
