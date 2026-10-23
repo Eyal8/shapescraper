@@ -115,8 +115,17 @@ button { font: inherit; color: inherit; }
 .lock { width: 10px; height: 10px; flex: none; }
 .lock path { fill: none; stroke: currentColor; stroke-width: 2.2; }
 .lock rect { fill: currentColor; }
-.shapes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%; }
+.shapes {
+  position: relative; /* children measure offsets from the carousel itself */
+  display: flex; gap: 8px; width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; touch-action: pan-x; scrollbar-width: none;
+  padding: 4px calc(50% - 40px); box-sizing: border-box;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.shapes::-webkit-scrollbar { display: none; }
 .shape {
+  flex: 0 0 80px; scroll-snap-align: center; transform-origin: center; will-change: transform;
   cursor: pointer; position: relative; min-width: 0;
   padding: 10px 2px 8px; border-radius: 14px;
   background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink);
@@ -162,6 +171,13 @@ button { font: inherit; color: inherit; }
 }
 .row { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .seg-btn:focus-visible, .shape:focus-visible, .btn:focus-visible, .link-btn:focus-visible, #mute:focus-visible, .day:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.offer-ring { position: relative; width: 112px; height: 112px; }
+.offer-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.offer-ring circle { fill: none; stroke-width: 7; }
+.offer-ring .track-c { stroke: rgba(255,255,255,0.14); }
+.offer-ring .prog { stroke: var(--gold); stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
+.offer-ring span { position: absolute; inset: 0; display: grid; place-items: center; font: 800 40px var(--display); font-variant-numeric: tabular-nums; }
+.offer-title { font: 800 24px/1.1 var(--display); }
 #celebrate { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .check { width: 56px; height: 56px; border-radius: 50%; background: var(--done); display: grid; place-items: center; animation: stamp 0.5s cubic-bezier(.2,1.6,.4,1) both; }
 .check svg { width: 28px; height: 28px; }
@@ -322,6 +338,18 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
     </div>
   </div>
 
+  <div class="panel" id="offer" hidden>
+    <div class="card">
+      <div class="offer-title">Keep going?</div>
+      <div class="offer-ring"><svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track-c" cx="56" cy="56" r="48"/><circle class="prog" id="offerProg" cx="56" cy="56" r="48"/></svg><span id="offerCount">5</span></div>
+      <div class="label" id="offerScore"></div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="offerYes">Continue<small>Watch a short ad</small></button>
+      </div>
+      <button type="button" class="link-btn" id="offerNo">No thanks</button>
+    </div>
+  </div>
+
   <div class="panel" id="over" hidden>
     <div class="card">
       <div id="celebrate" hidden>
@@ -338,8 +366,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <div class="label" id="overGoal" hidden></div>
       <div class="label" id="unlockNote" hidden></div>
       <div class="actions">
-        <button type="button" class="btn primary" id="continueBtn">Continue from <span id="contScore">0</span><small>Watch a short ad</small></button>
-        <button type="button" class="btn" id="againBtn">Play again</button>
+        <button type="button" class="btn primary" id="againBtn">Play again</button>
       </div>
       <div class="row">
         <button type="button" class="link-btn" id="menuBtn">Menu</button>
@@ -487,6 +514,7 @@ window.Ads = (function () {
   const ids = CONFIG[platform] || {};
   const ready = { interstitial: false, rewarded: false };
   let lastInterstitial = Date.now(); // never right at launch
+  let lastRewarded = 0; // a player who just watched a rewarded ad doesn't get a forced one next
   let privacyRequired = false; // UMP says players must be able to reopen ad privacy choices
 
   async function init() {
@@ -565,7 +593,7 @@ window.Ads = (function () {
 
   async function showRewarded() {
     if (adFree()) return true; // Remove Ads makes rewards free
-    if (!AdMob) return simulate(5);
+    if (!AdMob) { const ok = await simulate(5); if (ok) lastRewarded = Date.now(); return ok; }
     if (!ready.rewarded) { await preload('rewarded'); if (!ready.rewarded) return false; }
     ready.rewarded = false;
     let earned = false;
@@ -577,13 +605,15 @@ window.Ads = (function () {
     AdMob.showRewardVideoAd().then((r) => { if (r && r.amount) earned = true; }).catch(() => {});
     await done;
     preload('rewarded');
+    if (earned) lastRewarded = Date.now();
     return earned;
   }
 
   async function maybeInterstitial(gamesPlayed) {
     if (adFree()) return;
     const due = gamesPlayed > 0 && gamesPlayed % CONFIG.interstitialEveryGames === 0;
-    const spaced = Date.now() - lastInterstitial > CONFIG.minSecondsBetweenInterstitials * 1000;
+    const gap = CONFIG.minSecondsBetweenInterstitials * 1000;
+    const spaced = Date.now() - lastInterstitial > gap && Date.now() - lastRewarded > gap;
     if (!due || !spaced) return;
     lastInterstitial = Date.now();
     if (!AdMob) { await simulate(3); return; }
@@ -617,7 +647,8 @@ window.Ads = (function () {
   const PERFECT = 0.14;    // snap tolerance
   const MIN_SCORE_TO_CONTINUE = 5;
   // Best Endless score in the previous shape that unlocks each shape; it rises as you go. Any shape or mode can also be unlocked with a rewarded ad.
-  const UNLOCK_AT = { circle: 20, triangle: 25, pentagon: 30, hexagon: 35 };
+  // Each mode has its own targets: Endless shapes unlock from Endless scores, Time Attack shapes from Time Attack scores.
+  const UNLOCK = { endless: { circle: 20, triangle: 25, pentagon: 30, hexagon: 35 }, time: { circle: 15, triangle: 20, pentagon: 25, hexagon: 30 } };
   const TIME_START = 60, TIME_BONUS = 2, TIME_CONTINUE = 15;
   const MODE_UNLOCK = { daily: 10, time: 20 }; // best Endless score (any shape) that opens each mode
   const DAILY_HISTORY = 60;    // how many past days the calendar offers
@@ -653,13 +684,15 @@ window.Ads = (function () {
     const legacy = m === 'endless' && s === 'square' ? Math.max(store.get('ss_best_classic', 0) || 0, store.get('ts_best', 0) || 0) : 0;
     return store.get(bestKey(m, s), legacy) || 0;
   }
-  function unlockedSet() { return store.get('ss_unlocked', ['square']); }
-  function isUnlocked(s) {
-    if (s === 'square' || unlockedSet().includes(s)) return true;
-    const prev = SHAPES[SHAPES.indexOf(s) - 1];
-    return bestOf('endless', prev) >= UNLOCK_AT[s];
+  const unlockKey = (m) => m === 'time' ? 'ss_unlocked_time' : 'ss_unlocked';
+  function unlockedSet(m) { return store.get(unlockKey(m), ['square']); }
+  const prevShape = (s) => SHAPES[SHAPES.indexOf(s) - 1];
+  function isUnlocked(s, m) {
+    m = m === 'time' ? 'time' : 'endless';
+    if (s === 'square' || unlockedSet(m).includes(s)) return true;
+    return bestOf(m, prevShape(s)) >= UNLOCK[m][s];
   }
-  function unlock(s) { const u = unlockedSet(); if (!u.includes(s)) { u.push(s); store.set('ss_unlocked', u); } }
+  function unlock(s, m) { const u = unlockedSet(m); if (!u.includes(s)) { u.push(s); store.set(unlockKey(m), u); } }
   const endlessBestAny = () => Math.max(...SHAPES.map((s) => bestOf('endless', s)));
   function modeUnlocked(m) {
     if (m === 'endless') return true;
@@ -967,24 +1000,22 @@ window.Ads = (function () {
       else sub.textContent = 'Perfects ' + perfects + ' / ' + g.n;
     } else {
       const next = SHAPES[SHAPES.indexOf(runShape) + 1];
-      sub.textContent = next && !isUnlocked(next) && score < UNLOCK_AT[next] ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK_AT[next] : '';
+      sub.textContent = next && !isUnlocked(next, 'endless') && score < UNLOCK.endless[next] ? SHAPE_NAMES[next] + ' unlocks at ' + UNLOCK.endless[next] : '';
     }
     sub.hidden = state !== 'playing' || !sub.textContent;
   }
 
   // ---------- unlocks ----------
   function checkUnlock() {
-    if (mode !== 'endless') return;
+    if (mode !== 'endless' && mode !== 'time') return;
     const next = SHAPES[SHAPES.indexOf(runShape) + 1];
-    if (!next || score !== UNLOCK_AT[next]) return;
-    if (next && !unlockedSet().includes(next) && !isUnlockedByScoreSoFar(next)) {
-      unlock(next); newlyUnlocked = next;
+    if (!next || score !== UNLOCK[mode][next]) return;
+    if (!isUnlocked(next, mode)) {
+      unlock(next, mode); newlyUnlocked = next;
       showPopup(SHAPE_NAMES[next] + ' unlocked!', 1600);
       tone(660, 0.3, 'sine', 0.18);
     }
   }
-  // isUnlocked() reads the saved best, which only updates at game over; this avoids a double announcement.
-  function isUnlockedByScoreSoFar(s) { return unlockedSet().includes(s); }
 
   // ---------- daily goal + streak ----------
   function checkDailyGoal() {
@@ -1100,7 +1131,7 @@ window.Ads = (function () {
       page.setAttribute('aria-hidden', String(!current));
     });
     shapeBtns.forEach((b) => {
-      const s = b.dataset.shape, un = isUnlocked(s);
+      const s = b.dataset.shape, un = isUnlocked(s, b.closest('.page').dataset.page);
       b.classList.toggle('locked', !un);
       b.querySelector('.lock').style.display = un ? 'none' : '';
       b.setAttribute('aria-checked', String(s === shape));
@@ -1124,11 +1155,11 @@ window.Ads = (function () {
         return;
       }
       const label = page.querySelector('[data-best-label]'), big = page.querySelector('[data-best]'), sub = page.querySelector('[data-best-sub]');
-      if (!isUnlocked(shape)) {
-        const prev = SHAPES[SHAPES.indexOf(shape) - 1];
+      if (!isUnlocked(shape, m)) {
+        const prev = prevShape(shape);
         label.textContent = SHAPE_NAMES[shape] + ' is locked';
-        big.textContent = bestOf('endless', prev) + ' / ' + UNLOCK_AT[shape];
-        sub.textContent = 'Your best in ' + SHAPE_NAMES[prev] + ' Endless';
+        big.textContent = bestOf(m, prev) + ' / ' + UNLOCK[m][shape];
+        sub.textContent = 'Your best in ' + SHAPE_NAMES[prev] + ' ' + MODES[m];
         sub.hidden = false;
         play.innerHTML = 'Unlock ' + SHAPE_NAMES[shape] + '<small>' + adNote() + '</small>';
       } else {
@@ -1139,7 +1170,61 @@ window.Ads = (function () {
       }
     });
     renderStoreLinks();
+    syncCarousels();
   }
+
+  // ---------- shape carousel: the chosen shape sits in the middle; swipe or tap to move ----------
+  const pickers = document.querySelectorAll('[data-picker]');
+  function centerOn(scroller, s, smooth) {
+    const el = scroller.querySelector('[data-shape="' + s + '"]');
+    if (!el) return;
+    scroller.scrollTo({ left: el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' });
+  }
+  function nearest(scroller) {
+    const mid = scroller.scrollLeft + scroller.clientWidth / 2;
+    let best = null, d = Infinity;
+    scroller.querySelectorAll('.shape').forEach((el) => {
+      const dd = Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid);
+      if (dd < d) { d = dd; best = el; }
+    });
+    return best;
+  }
+  function styleCarousel(scroller) {
+    const mid = scroller.scrollLeft + scroller.clientWidth / 2;
+    scroller.querySelectorAll('.shape').forEach((el) => {
+      const d = Math.min(2, Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid) / (el.offsetWidth + 8));
+      el.style.transform = 'scale(' + (1 - d * 0.12).toFixed(3) + ')';
+      el.style.opacity = (1 - d * 0.28).toFixed(3);
+    });
+  }
+  function syncCarousels() {
+    pickers.forEach((p) => {
+      const active = p.closest('.page').dataset.page === mode;
+      const n = nearest(p);
+      if (!active || !p._scrolling) { if (!n || n.dataset.shape !== shape) { p._programmatic = true; centerOn(p, shape, false); } }
+      styleCarousel(p);
+    });
+  }
+  function selectShape(s) {
+    if (shape === s) return;
+    shape = s; store.set('ss_shape', shape);
+    renderMenu(); reset();
+    tone(520, 0.05, 'sine', 0.06);
+  }
+  pickers.forEach((p) => {
+    let t;
+    p.addEventListener('scroll', () => {
+      p._scrolling = true;
+      styleCarousel(p);
+      clearTimeout(t);
+      t = setTimeout(() => {
+        p._scrolling = false;
+        if (p.closest('.page').dataset.page !== mode || p._programmatic) { p._programmatic = false; return; } // only the visible carousel picks a shape
+        const n = nearest(p); if (n) selectShape(n.dataset.shape);
+      }, 110);
+    }, { passive: true });
+  });
+  window.addEventListener('resize', () => syncCarousels());
   function renderStoreLinks() {
     const st = window.Store, owned = st && st.noAds();
     $('noAdsBtn').textContent = owned ? 'Ads removed' : 'Remove ads · ' + (st ? st.price() : '$2.99');
@@ -1160,13 +1245,13 @@ window.Ads = (function () {
     reset(); renderMenu();
   }
   segBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-  shapeBtns.forEach((b) => b.addEventListener('click', () => { if (shape === b.dataset.shape) return; shape = b.dataset.shape; store.set('ss_shape', shape); renderMenu(); reset(); }));
+  shapeBtns.forEach((b) => b.addEventListener('click', () => { centerOn(b.parentElement, b.dataset.shape, true); selectShape(b.dataset.shape); }));
   document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => { initAudio(); onPlay(); }));
   $('week').addEventListener('click', () => openCalendar());
   $('week').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCalendar(); } });
   // Swipe left / right on the menu card to change mode.
   let swipe = null;
-  $('menuCard').addEventListener('pointerdown', (e) => { swipe = { x: e.clientX, y: e.clientY }; });
+  $('menuCard').addEventListener('pointerdown', (e) => { swipe = e.target.closest('.shapes') ? null : { x: e.clientX, y: e.clientY }; });
   $('menuCard').addEventListener('pointerup', (e) => {
     if (!swipe) return;
     const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
@@ -1272,7 +1357,7 @@ window.Ads = (function () {
 
   function showMenu() {
     state = 'menu';
-    overEl.hidden = true; scoreEl.hidden = true; $('sub').hidden = true;
+    overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = true; $('sub').hidden = true;
     menuEl.hidden = false;
     reset();
     renderMenu();
@@ -1293,12 +1378,9 @@ window.Ads = (function () {
       return;
     }
     if (mode === 'daily') runDate = dayKey();
-    if (mode !== 'daily' && !isUnlocked(shape)) {
-      busy = true;
-      let ok = false;
-      try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
-      busy = false;
-      if (ok) { unlock(shape); showPopup(SHAPE_NAMES[shape] + ' unlocked!', 1400); celebrate(false); }
+    if (mode !== 'daily' && !isUnlocked(shape, mode)) {
+      const ok = await rewarded();
+      if (ok) { unlock(shape, mode); showPopup(SHAPE_NAMES[shape] + ' unlocked!', 1400); celebrate(false); }
       renderMenu();
       return;
     }
@@ -1336,7 +1418,12 @@ window.Ads = (function () {
     const opened = [];
     if (wasDailyLocked && modeUnlocked('daily')) opened.push('Daily challenge');
     if (wasTimeLocked && modeUnlocked('time')) opened.push('Time Attack');
-    setTimeout(() => {
+    const args = { reason, isNew, best, opened };
+    setTimeout(() => { if (canContinue) showOffer(args); else showResults(reason, isNew, best, opened); }, 650);
+  }
+
+  function showResults(reason, isNew, best, opened) {
+    {
       $('overMode').textContent = mode === 'time' && reason === 'time' ? "Time's up · " + SHAPE_NAMES[runShape] : modeLabel();
       $('finalScore').textContent = score;
       $('finalBest').textContent = best;
@@ -1362,20 +1449,65 @@ window.Ads = (function () {
       const un = $('unlockNote');
       un.textContent = notes.join(' · ');
       un.hidden = !notes.length;
-      $('continueBtn').querySelector('small').textContent = adNote();
-      $('contScore').textContent = score;
-      $('continueBtn').hidden = !canContinue;
-      $('continueBtn').firstChild.textContent = mode === 'time' && reason === 'time' ? '+' + TIME_CONTINUE + ' seconds at ' : 'Continue from ';
-      scoreEl.hidden = true; $('sub').hidden = true;
+      scoreEl.hidden = true; $('sub').hidden = true; $('offer').hidden = true;
       overEl.hidden = false;
-    }, 650);
+      overAt = performance.now();
+    }
   }
+
+  // ---------- continue offer: shown at the moment of failure, with a countdown ----------
+  const OFFER_SECONDS = 5, RING = 2 * Math.PI * 48;
+  let offerTimer = null, offerArgs = null;
+  function showOffer(args) {
+    offerArgs = args;
+    const timeUp = mode === 'time' && args.reason === 'time';
+    $('offerScore').textContent = timeUp ? "Time's up at " + score : 'Score ' + score;
+    $('offerYes').innerHTML = (timeUp ? '+' + TIME_CONTINUE + ' seconds' : 'Continue') + '<small>' + adNote() + '</small>';
+    scoreEl.hidden = true; $('sub').hidden = true;
+    $('offer').hidden = false;
+    $('offerProg').style.strokeDasharray = RING;
+    const t0 = performance.now();
+    const tick = () => {
+      const left = Math.max(0, OFFER_SECONDS - (performance.now() - t0) / 1000);
+      $('offerCount').textContent = Math.ceil(left);
+      $('offerProg').style.strokeDashoffset = RING * (1 - left / OFFER_SECONDS);
+      if (left <= 0) { declineOffer(); return; }
+      offerTimer = setTimeout(tick, 100);
+    };
+    tick();
+  }
+  function stopOffer() { clearTimeout(offerTimer); offerTimer = null; }
+  function declineOffer() {
+    if (!offerArgs || busy) return;
+    stopOffer();
+    const a = offerArgs; offerArgs = null;
+    showResults(a.reason, a.isNew, a.best, a.opened);
+  }
+  async function acceptOffer() {
+    if (!offerArgs || busy) return;
+    stopOffer();
+    const ok = await rewarded();
+    if (!ok) { declineOffer(); return; }
+    offerArgs = null;
+    $('offer').hidden = true;
+    continued = true;
+    gamesPlayed = Math.max(0, gamesPlayed - 1);
+    combo = 0;
+    if (mode === 'time' && timeLeft <= 0) timeLeft = TIME_CONTINUE;
+    scoreEl.hidden = false;
+    state = 'playing';
+    spawnMoving();
+  }
+  $('offerYes').addEventListener('click', () => { initAudio(); acceptOffer(); });
+  $('offerNo').addEventListener('click', declineOffer);
+
+
 
   function start() {
     if (spin) { world.rotation.y = spin.to; spin = null; }
     reset();
     state = 'playing';
-    menuEl.hidden = true; overEl.hidden = true; scoreEl.hidden = false;
+    menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
     spawnMoving();
   }
 
@@ -1385,22 +1517,6 @@ window.Ads = (function () {
     try { await window.Ads.maybeInterstitial(gamesPlayed); } catch (e) {}
     busy = false;
     start();
-  }
-
-  async function continueRun() {
-    if (busy) return;
-    busy = true;
-    let ok = false;
-    try { ok = await window.Ads.showRewarded(); } catch (e) { ok = false; }
-    busy = false;
-    if (!ok) { $('continueBtn').hidden = true; return; }
-    continued = true;
-    gamesPlayed = Math.max(0, gamesPlayed - 1);
-    combo = 0;
-    if (mode === 'time' && timeLeft <= 0) timeLeft = TIME_CONTINUE;
-    overEl.hidden = true; scoreEl.hidden = false;
-    state = 'playing';
-    spawnMoving();
   }
 
   // ---------- audio + haptics ----------
@@ -1430,7 +1546,7 @@ window.Ads = (function () {
     initAudio();
     if (state === 'menu') onPlay();
     else if (state === 'playing' && moving) place();
-    else if (state === 'over' && performance.now() - overAt > 700 && !overEl.hidden && $('continueBtn').hidden) playAgain();
+    else if (state === 'over' && performance.now() - overAt > 700 && !overEl.hidden) playAgain();
   }
   window.addEventListener('pointerdown', (e) => {
     if (e.target.closest && e.target.closest('button, .card, #calendar')) return;
@@ -1451,7 +1567,6 @@ window.Ads = (function () {
     store.set('ts_muted', muted ? 1 : 0);
   });
   $('againBtn').addEventListener('click', () => { initAudio(); playAgain(); });
-  $('continueBtn').addEventListener('click', () => { initAudio(); continueRun(); });
   $('menuBtn').addEventListener('click', () => { if (!busy) { runDate = null; showMenu(); } });
 
   const privacyBtns = document.querySelectorAll('.privacy-btn');
@@ -1532,7 +1647,7 @@ window.Ads = (function () {
       start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
-      unlockAll() { SHAPES.forEach(unlock); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, bestOf('endless', 'square'))); renderMenu(); },
+      unlockAll() { SHAPES.forEach((x) => { unlock(x, 'endless'); unlock(x, 'time'); }); store.set('ss_games', Math.max(1, store.get('ss_games', 0) || 0)); store.set(bestKey('endless', 'square'), Math.max(MODE_UNLOCK.time, bestOf('endless', 'square'))); renderMenu(); },
       calendar() { openCalendar(); },
       setMode(m) { setMode(m); },
       playDate(k) { mode = 'daily'; runDate = k; start(); },
