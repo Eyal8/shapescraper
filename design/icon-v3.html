@@ -78,8 +78,13 @@ const V = {
   3: { c: [0, [0, 0]], s: [0.95, [0.85, -0.55], [2.6, 0.9, -0.7]] },                 // star in free fall, well below the top
   4: { c: [0.12, [1, 0]], s: [0.8, [0.85, -0.55], [1.6, 0.6, -0.5]] },               // circle a touch off, star falling
   5: { c: [0, [0, 0]], s: [0.62, [0.85, -0.55]] },                                   // star hanging far over the edge
-  6: { c: [0, [0, 0]], s: [0.95, [0.85, -0.55], [2.6, 0.9, -0.7]], chip: true }      // free fall + a sliced chip off the square
-}[q.get('v') || 3]; // 3 = the shipped icon
+  6: { c: [0, [0, 0]], s: [0.95, [0.85, -0.55], [2.6, 0.9, -0.7]], chip: true },     // free fall + a sliced chip off the square
+  // physically tipping off the right-hand edge: it pivots on that edge, so it rolls about the edge's axis, outer side down
+  7: { c: [0, [0, 0]], s: [0.82, [0.85, -0.55], [1.5, 0.12, -0.6]] },   // shipped
+  8: { c: [0, [0, 0]], s: [0.98, [0.85, -0.55], [2.4, 0.25, -0.95]] },
+  9: { c: [0, [0, 0]], s: [0.72, [0.85, -0.55], [0.85, 0.08, -0.45]] },
+  10: { c: [0, [0, 0]], s: [1.05, [0.85, -0.55], [2.9, 0.35, -1.25]] },
+}[q.get('v') || 7]; // 7 = the shipped icon
 tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, V.c[0], V.c[1], V.c[2]);
 tower(right, ...at(4.3, 1.4), 3, 20, 1.5, { 1: [0.92, -0.1, 0] }, V.s[0], V.s[1], V.s[2]);
 if (V.chip) { // the overhang sliced off the square's top block, falling (like the current icon)
