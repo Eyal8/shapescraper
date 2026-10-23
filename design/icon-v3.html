@@ -1,0 +1,78 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<script src="../node_modules/three/build/three.min.js"></script>
+<script>
+// Icon v3: the current icon's look (peach sky, game colours, a block landing off-centre) with three towers.
+// ?shapes=square,circle,star  (left, middle-back, right)  ?sky=<hue, default 18 = the current peach>
+const q = new URLSearchParams(location.search);
+const shapes = (q.get('shapes') || 'circle,square,star').split(',');
+const sky = q.get('sky');
+document.body.style.background = sky === null
+  ? 'linear-gradient(180deg,hsl(28 90% 86%),hsl(350 70% 74%))'           // the current icon's sky
+  : `linear-gradient(180deg, hsl(${sky} 60% 86%), hsl(${+sky + 35} 48% 64%))`; // the game's sky at another hue
+
+const canvas = document.getElementById('c');
+const W = innerWidth, H = innerHeight;
+const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setPixelRatio(1); r.setSize(W, H, false);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(5, 14, 3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.22); fill.position.set(-8, 3, -2); scene.add(fill);
+
+function poly(n, rot, rad) {
+  const s = new THREE.Shape();
+  for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; const p = [Math.cos(a) * rad, Math.sin(a) * rad]; i ? s.lineTo(...p) : s.moveTo(...p); }
+  s.closePath(); return s;
+}
+const SHAPES = {
+  square: () => poly(4, Math.PI / 4, Math.SQRT2 * 0.88),   // axis-aligned, like the current icon's blocks
+  circle: () => { const s = new THREE.Shape(); s.absarc(0, 0, 1, 0, Math.PI * 2, false); return s; },
+  hexagon: () => poly(6, Math.PI / 12, 1.06),
+  pentagon: () => poly(5, Math.PI / 4 - Math.PI / 2, 1.08),
+  star: () => {
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = Math.PI / 4 - Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 ? 0.58 : 1.28; const p = [Math.cos(a) * rr, Math.sin(a) * rr]; i ? s.lineTo(...p) : s.moveTo(...p); }
+    s.closePath(); return s;
+  }
+};
+const geo = {};
+const layerGeo = (k) => geo[k] || (geo[k] = new THREE.ExtrudeGeometry(SHAPES[k](), { depth: 1, bevelEnabled: false, curveSegments: 48 }).rotateX(-Math.PI / 2));
+// game colours: hsl(h, 62%, 62%), hue climbing per block (the current icon climbs 13 per block)
+const col = (h, l = 0.62, s = 0.62) => new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL((((h % 360) + 360) % 360) / 360, s, l) });
+
+// A tower: base column, stacked layers with a few slices on the way up, and a top block that landed
+// `top` of a block-width off centre (0 = perfect, 0.5 = half hanging over the edge).
+function tower(kind, x, z, layers, hue, size, cuts, top, topDir) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(layerGeo(kind), col(hue, 0.56, 0.5)); base.scale.set(size, 30, size); base.position.y = -30; g.add(base);
+  let s = size, ox = 0, oz = 0;
+  for (let i = 0; i < layers; i++) {
+    if (cuts[i]) { const [k, dx, dz] = cuts[i]; s *= k; ox += dx; oz += dz; }
+    const m = new THREE.Mesh(layerGeo(kind), col(hue + i * 13)); m.scale.set(s, 1, s); m.position.set(ox, i, oz); g.add(m);
+  }
+  const t = new THREE.Mesh(layerGeo(kind), col(hue + layers * 13, 0.66));
+  const off = top * 2 * s;
+  t.scale.set(s, 1, s); t.position.set(ox + topDir[0] * off, layers, oz + topDir[1] * off); g.add(t);
+  g.position.set(x, 0, z); scene.add(g);
+}
+const at = (sx, d) => [(sx + d) / 2, (d - sx) / 2]; // screen left/right, depth (+ toward the viewer)
+const [left, mid, right] = shapes;
+// middle-back: tallest, top block far off (like the current icon); left: medium, half off; right: short, perfect
+tower(mid, ...at(0.3, -2.6), 8, 195, 1.6, { 2: [0.9, 0.12, 0], 5: [0.88, 0, 0.14] }, 0.55, [-1, 0]);
+tower(left, ...at(-4.4, 0.4), 5, 300, 1.5, { 1: [0.9, 0, -0.12], 3: [0.92, 0.1, 0] }, 0.3, [-0.72, 0.72]);   // slid toward the viewer's left so the overhang shows
+tower(right, ...at(4.3, 1.4), 3, 20, 1.5, { 1: [0.92, -0.1, 0] }, 0, [0, 0]);
+
+const view = 16, cy = 4.2;
+const cam = new THREE.OrthographicCamera(-view / 2, view / 2, view / 2, -view / 2, 0.1, 300);
+cam.position.set(12, cy + 12, 12); cam.lookAt(0, cy, 0);
+r.render(scene, cam);
+document.title = 'ready';
+</script>
+</body></html>
