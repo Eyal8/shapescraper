@@ -941,9 +941,11 @@ window.Ads = (function () {
     if (mode === 'daily') { runDate = runDate || dayKey(); pinDayShape(runDate); dcfg = dailyConfig(runDate); runShape = dcfg.shape; hueBase = dcfg.hue; dailyAlready = dayRec(runDate).done; }
     else { dcfg = null; runShape = shape; hueBase = SHAPE_HUE[shape] + (Math.random() - 0.5) * 50; }
     timeLeft = TIME_START;
-    const ped = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: colorAt(0).offsetHSL(0, -0.1, -0.12) }));
-    ped.scale.set(START, 30, START); ped.position.set(0, -H / 2 - 15, 0); world.add(ped);
     const first = regular(runShape, runShape === 'square' ? START_AREA : START_AREA * 0.86, 0, 0);
+    // The base column has the same outline as the shape being played.
+    const [pcx, pcz] = centroid(first);
+    const ped = meshFor(first, pcx, pcz, colorAt(0).offsetHSL(0, -0.1, -0.12));
+    ped.scale.set(1, 30 / H, 1); ped.position.set(pcx, -H / 2 - 15, pcz);
     stack.push(addLayer(first, 0));
     setBg(0);
     scoreEl.textContent = '0';
