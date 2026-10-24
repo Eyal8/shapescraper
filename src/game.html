@@ -86,6 +86,15 @@ button { font: inherit; color: inherit; }
   font-family: var(--display); font-weight: 500; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
   pointer-events: none; animation: hintPulse 1.4s ease-in-out infinite;
 }
+#tip {
+  position: fixed; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(6px);
+  width: max-content; max-width: calc(100vw - 48px); padding: 12px 20px; border-radius: 18px; background: rgba(20,23,40,0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  text-align: center;
+  pointer-events: none; opacity: 0; transition: opacity 0.25s, transform 0.25s;
+}
+#tip.show { opacity: 1; transform: translateX(-50%); }
+#tip b { display: block; font-family: var(--display); font-weight: 800; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; }
+#tip span { display: block; margin-top: 4px; font-size: 13px; opacity: 0.9; }
 @keyframes hintPulse { 0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(0.97); } 50% { opacity: 1; transform: translateX(-50%) scale(1); } }
 #banner {
   position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%);
@@ -314,6 +323,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   <div id="popup">Perfect</div>
   <button type="button" id="devPalette" hidden>Palette</button>
   <div id="hint" hidden>Tap anywhere to drop</div>
+  <div id="tip"></div>
 
   <div class="panel" id="menu">
     <h1>Shape<br>scraper</h1>
@@ -1153,6 +1163,22 @@ window.Ads = (function () {
       rx: (Math.random() - 0.5) * 3, rz: (Math.random() - 0.5) * 3 });
   }
 
+  // One-time tips for new players: shown once each, only in their first few games.
+  let tipTimer = 0;
+  function hideTip() { clearTimeout(tipTimer); $('tip').classList.remove('show'); }
+  function tipOnce(key, title, line) {
+    if (store.get(key, 0) || (store.get('ss_games', 0) || 0) >= 3) return;
+    store.set(key, 1);
+    const el = $('tip');
+    el.innerHTML = '';
+    const b = document.createElement('b'); b.textContent = title;
+    const sp = document.createElement('span'); sp.textContent = line;
+    el.append(b, sp);
+    el.classList.add('show');
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(hideTip, 3200);
+  }
+
   function place() {
     $('hint').hidden = true;
     const top = topLayer(), m = moving, lvl = m.lvl, y = lvl * H, color = colorAt(lvl);
@@ -1175,6 +1201,7 @@ window.Ads = (function () {
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
       buzz(10, 'perfect');
+      tipOnce('ss_tip_perfect', 'Nothing cut!', '3 perfects in a row grow your tower back');
     } else {
       combo = 0;
       const overlap = clip('intersection', top.mp, dropped);
@@ -1200,6 +1227,7 @@ window.Ads = (function () {
       addDebris(clip('difference', dropped, placed), y, color, m.axis, sign);
       tone(196 + score * 3, 0.09, 'triangle', 0.16);
       buzz(18, 'slice');
+      tipOnce('ss_tip_slice', 'Sticking out? Cut off', 'Tap when the block is right on top');
     }
 
     stack.push(addLayer(placed, lvl));
@@ -1726,7 +1754,7 @@ window.Ads = (function () {
 
   function gameOver(reason) {
     state = 'over';
-    $('hint').hidden = true;
+    $('hint').hidden = true; hideTip();
     overAt = performance.now();
     if (moving) {
       const top = topLayer(), m = moving;
@@ -1858,6 +1886,7 @@ window.Ads = (function () {
     reset();
     state = 'playing';
     menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
+    hideTip();
     $('hint').hidden = (store.get('ss_games', 0) || 0) > 0; // first game only, until the first drop
     spawnMoving();
   }
