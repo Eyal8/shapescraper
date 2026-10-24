@@ -1,3 +1,6 @@
 node_modules/
 www/
 .DS_Store
+
+# Private notes live in the claude.ai Project, not here
+HANDOFF.md
