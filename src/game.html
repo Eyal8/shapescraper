@@ -72,6 +72,12 @@ button { font: inherit; color: inherit; }
 #sub.timer { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: 0.02em; padding: 6px 16px; }
 #sub.warn { color: var(--warn); }
 #sub.goal-done { color: var(--done); }
+#bestTag {
+  margin-top: 2px; font-family: var(--display); font-weight: 500; font-size: 12px; letter-spacing: 0.16em;
+  text-transform: uppercase; opacity: 0.75; text-shadow: 0 1px 8px var(--shadow); font-variant-numeric: tabular-nums;
+  transition: opacity 0.2s, transform 0.25s;
+}
+#bestTag.new { opacity: 1; color: #ffe08a; transform: scale(1.08); }
 #popup {
   margin-top: 10px; font-family: var(--display); font-weight: 500;
   font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
@@ -319,6 +325,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 <div id="grainFx" hidden aria-hidden="true"></div>
 <div class="hud">
   <div id="score" hidden>0</div>
+  <div id="bestTag" hidden></div>
   <div id="sub" hidden></div>
   <div id="popup">Perfect</div>
   <button type="button" id="devPalette" hidden>Palette</button>
@@ -972,7 +979,8 @@ window.Ads = (function () {
 
   // ---------- game state ----------
   let state = 'menu';
-  let stack = [], debris = [], rings = [], moving = null;
+  let stack = [], debris = [], rings = [], moving = null, grows = [];
+  let runBest = 0, bestBeaten = false;
   let score = 0, combo = 0, perfects = 0, bestChain = 0, hueBase = 0, camY = 2, overAt = 0;
   let gamesPlayed = 0, continued = false, busy = false, timeLeft = 0;
   let runShape = 'square', dcfg = null, runDate = null, dailyJustDone = false, dailyAlready = false, newlyUnlocked = null;
@@ -1132,6 +1140,8 @@ window.Ads = (function () {
     if (mode === 'daily') { runDate = runDate || dayKey(); pinDayShape(runDate); dcfg = dailyConfig(runDate); runShape = dcfg.shape; hueBase = dcfg.hue; dailyAlready = dayRec(runDate).done; }
     else { dcfg = null; runShape = shape; hueBase = SHAPE_HUE[shape] + (Math.random() - 0.5) * 50; }
     timeLeft = TIME_START;
+    runBest = mode === 'daily' ? dayRec(runDate).best : bestOf(mode, runShape);
+    bestBeaten = false; grows = [];
     const first = regular(runShape, runShape === 'square' ? START_AREA : START_AREA * 0.86, 0, 0);
     // The base column has the same outline as the shape being played.
     const [pcx, pcz] = centroid(first);
@@ -1140,6 +1150,7 @@ window.Ads = (function () {
     stack.push(addLayer(first, 0));
     setBg(0);
     scoreEl.textContent = '0';
+    renderBest();
   }
 
   function spawnMoving() {
@@ -1188,16 +1199,18 @@ window.Ads = (function () {
     removeMesh(m.mesh);
     moving = null;
 
-    let placed;
+    let placed, grewFrom = 0;
     if (Math.abs(m.off) < PERFECT) {
       combo++; perfects++; bestChain = Math.max(bestChain, combo);
       placed = top.mp;
       if (combo >= 3 && top.area < START_AREA * (runShape === 'square' ? 1 : 0.86)) {
         const grown = Math.min(top.area * 1.07, START_AREA * (runShape === 'square' ? 1 : 0.86));
         placed = runShape === 'square' ? growRect(top.mp, Math.sqrt(grown / top.area)) : regular(runShape, grown, top.cx, top.cz);
+        grewFrom = top.area;
       }
-      if (mode === 'time') { timeLeft += TIME_BONUS; showPopup((combo > 1 ? 'Perfect ×' + combo : 'Perfect') + ' · +' + TIME_BONUS + 's'); }
-      else showPopup(combo > 1 ? 'Perfect ×' + combo : 'Perfect');
+      const label = (combo > 1 ? 'Perfect ×' + combo : 'Perfect') + (grewFrom ? ' · Grow!' : '');
+      if (mode === 'time') { timeLeft += TIME_BONUS; showPopup(label + ' · +' + TIME_BONUS + 's'); }
+      else showPopup(label);
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
       buzz(10, 'perfect');
@@ -1230,14 +1243,19 @@ window.Ads = (function () {
       tipOnce('ss_tip_slice', 'Sticking out? Cut off', 'Tap when the block is right on top');
     }
 
-    stack.push(addLayer(placed, lvl));
+    const layer = addLayer(placed, lvl);
+    stack.push(layer);
+    if (grewFrom) growIn(layer, grewFrom);
     score = stack.length - 1;
     scoreEl.textContent = score;
     scoreEl.classList.add('bump');
     setTimeout(() => scoreEl.classList.remove('bump'), 120);
     setBg(lvl);
     checkDailyGoal();
+    const before = newlyUnlocked;
     checkUnlock();
+    checkBest(newlyUnlocked !== before);
+    if (bestBeaten) renderBest();
     spawnMoving();
   }
 
@@ -1246,6 +1264,35 @@ window.Ads = (function () {
     const [cx, cz] = centroid(mp);
     const lim = START / 2;
     return mapPts(mp, (x, z) => [Math.max(cx - lim * 2, cx + (x - cx) * s), Math.max(cz - lim * 2, cz + (z - cz) * s)]);
+  }
+
+  // Animates a freshly placed layer growing from an older footprint to its own (grow-back and continue boost).
+  function growIn(layer, fromArea) {
+    const s0 = Math.sqrt(Math.max(0.05, fromArea) / layer.area);
+    if (reduceMotion || s0 >= 0.999) return;
+    layer.mesh.scale.set(s0, 1, s0);
+    grows.push({ mesh: layer.mesh, s0, t: 0 });
+  }
+  const FULL_AREA = () => START_AREA * (runShape === 'square' ? 1 : 0.86);
+
+  // Best score shown under the score while playing; a small celebration the moment it is beaten.
+  function renderBest() {
+    const el = $('bestTag');
+    el.classList.toggle('new', bestBeaten);
+    el.textContent = 'Best ' + (bestBeaten ? score : runBest);
+    el.hidden = state !== 'playing' || runBest <= 0;
+  }
+  function checkBest(unlockedNow) {
+    if (bestBeaten || runBest < 5 || score <= runBest) return;
+    bestBeaten = true;
+    renderBest();
+    if (!unlockedNow) {
+      popupEl.classList.add('gold'); showPopup('New best!', 1800);
+      setTimeout(() => popupEl.classList.remove('gold'), 2100);
+      celebrate(false);
+      tone(784, 0.2, 'sine', 0.16); setTimeout(() => tone(1175, 0.3, 'sine', 0.15), 130);
+      buzz([15, 30, 15], 'success');
+    }
   }
 
   function addRing(mp, y) {
@@ -1718,7 +1765,7 @@ window.Ads = (function () {
 
   function showMenu() {
     state = 'menu';
-    overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = true; $('sub').hidden = true;
+    overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true;
     menuEl.hidden = false;
     reset();
     renderMenu();
@@ -1754,7 +1801,7 @@ window.Ads = (function () {
 
   function gameOver(reason) {
     state = 'over';
-    $('hint').hidden = true; hideTip();
+    $('hint').hidden = true; hideTip(); $('bestTag').hidden = true;
     overAt = performance.now();
     if (moving) {
       const top = topLayer(), m = moving;
@@ -1826,7 +1873,7 @@ window.Ads = (function () {
       const un = $('unlockNote');
       un.textContent = notes.join(' · ');
       un.hidden = !notes.length;
-      scoreEl.hidden = true; $('sub').hidden = true; $('offer').hidden = true;
+      scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true; $('offer').hidden = true;
       overEl.hidden = false;
       overAt = performance.now();
       maybeAskReview(isNew);
@@ -1841,7 +1888,7 @@ window.Ads = (function () {
     const timeUp = mode === 'time' && args.reason === 'time';
     $('offerScore').textContent = timeUp ? "Time's up at " + score : 'Score ' + score;
     $('offerYes').innerHTML = (timeUp ? '+' + TIME_CONTINUE + ' seconds' : 'Continue') + '<small>' + adNote(true) + '</small>';
-    scoreEl.hidden = true; $('sub').hidden = true;
+    scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true;
     $('offer').hidden = false;
     $('offerProg').style.strokeDasharray = RING;
     const t0 = performance.now();
@@ -1874,7 +1921,23 @@ window.Ads = (function () {
     if (mode === 'time' && timeLeft <= 0) timeLeft = TIME_CONTINUE;
     scoreEl.hidden = false;
     state = 'playing';
+    boostAfterContinue();
+    renderBest();
     spawnMoving();
+  }
+  // After a continue, a thin tower gets a fairer second chance: the top layer grows back
+  // to about half of the full size (never past the full size, never smaller than it was).
+  function boostAfterContinue() {
+    const top = topLayer(), full = FULL_AREA();
+    const target = Math.min(full, Math.max(full * 0.5, top.area * 1.25));
+    if (top.area >= target * 0.98) return;
+    const mp = runShape === 'square' ? growRect(top.mp, Math.sqrt(target / top.area)) : regular(runShape, target, top.cx, top.cz);
+    removeMesh(top.mesh);
+    const layer = addLayer(mp, stack.length - 1);
+    stack[stack.length - 1] = layer;
+    growIn(layer, top.area);
+    addRing(mp, (stack.length - 1) * H);
+    showPopup('Bigger block!', 1200);
   }
   $('offerYes').addEventListener('click', () => { initAudio(); acceptOffer(); });
   $('offerNo').addEventListener('click', declineOffer);
@@ -1886,6 +1949,7 @@ window.Ads = (function () {
     reset();
     state = 'playing';
     menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
+    renderBest();
     hideTip();
     $('hint').hidden = (store.get('ss_games', 0) || 0) > 0; // first game only, until the first drop
     spawnMoving();
@@ -2012,6 +2076,14 @@ window.Ads = (function () {
       const e = 1 - Math.pow(1 - spin.t, 3);
       world.rotation.y = spin.from + (spin.to - spin.from) * e;
       if (spin.t >= 1) spin = null;
+    }
+
+    for (let i = grows.length - 1; i >= 0; i--) {
+      const g = grows[i];
+      g.t = Math.min(1, g.t + dt / 0.35);
+      const e = 1 - Math.pow(1 - g.t, 3), k = g.s0 + (1 - g.s0) * e;
+      g.mesh.scale.set(k, 1, k);
+      if (g.t >= 1) grows.splice(i, 1);
     }
 
     if (state === 'playing') {
