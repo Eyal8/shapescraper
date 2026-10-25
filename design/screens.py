@@ -7,6 +7,7 @@ out = root / 'store'
 url = f'file://{root}/www/index.html#shots'
 PLAY = """async ({n, perfectTail, offs, shape}) => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  localStorage.setItem('ss_tip_slice', '1'); localStorage.setItem('ss_tip_perfect', '1');
   window.__ts.unlockAll(); window.__ts.start('endless', shape);
   for (let i = 0; i < n; i++) {
     const tail = i >= n - perfectTail;
