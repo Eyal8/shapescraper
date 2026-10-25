@@ -1925,19 +1925,32 @@ window.Ads = (function () {
     renderBest();
     spawnMoving();
   }
-  // After a continue, a thin tower gets a fairer second chance: the top layer grows back
-  // to about half of the full size (never past the full size, never smaller than it was).
+  // After a continue, a thin tower gets a fairer second chance: the last placed layer grows in place
+  // to half of the full size. Layers already at half size or more stay as they are.
+  // Other shapes keep their outline; a sliced square grows its narrow side first and never past the start size.
   function boostAfterContinue() {
-    const top = topLayer(), full = FULL_AREA();
-    const target = Math.min(full, Math.max(full * 0.5, top.area * 1.25));
+    const top = topLayer(), full = FULL_AREA(), target = full * 0.5;
     if (top.area >= target * 0.98) return;
-    const mp = runShape === 'square' ? growRect(top.mp, Math.sqrt(target / top.area)) : regular(runShape, target, top.cx, top.cz);
+    const mp = runShape === 'square' ? widenRect(top, target) : regular(runShape, target, top.cx, top.cz);
     removeMesh(top.mesh);
     const layer = addLayer(mp, stack.length - 1);
     stack[stack.length - 1] = layer;
     growIn(layer, top.area);
     addRing(mp, (stack.length - 1) * H);
     showPopup('Bigger block!', 1200);
+  }
+  // Rectangle about the same centre with the target area: the short side grows first, both sides capped at START.
+  function widenRect(top, target) {
+    const xs = [], zs = [];
+    top.mp.forEach((poly) => poly[0].forEach(([x, z]) => { xs.push(x); zs.push(z); }));
+    let w = Math.max(...xs) - Math.min(...xs), d = Math.max(...zs) - Math.min(...zs);
+    const hi = Math.max(w, d);
+    let nLo, nHi;
+    if (target / hi <= hi) { nLo = target / hi; nHi = hi; }          // widening the short side is enough
+    else { nLo = nHi = Math.min(START, Math.sqrt(target)); }         // becomes a square, then grows evenly
+    if (w <= d) { w = nLo; d = nHi; } else { w = nHi; d = nLo; }
+    const cx = top.cx, cz = top.cz;
+    return [[[[cx - w / 2, cz - d / 2], [cx + w / 2, cz - d / 2], [cx + w / 2, cz + d / 2], [cx - w / 2, cz + d / 2], [cx - w / 2, cz - d / 2]]]];
   }
   $('offerYes').addEventListener('click', () => { initAudio(); acceptOffer(); });
   $('offerNo').addEventListener('click', declineOffer);
