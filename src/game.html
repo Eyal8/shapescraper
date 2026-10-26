@@ -73,14 +73,14 @@ button { font: inherit; color: inherit; }
 #sub.warn { color: var(--warn); }
 #sub.goal-done { color: var(--done); }
 #bestTag {
-  margin-top: 2px; font-family: var(--display); font-weight: 500; font-size: 12px; letter-spacing: 0.16em;
-  text-transform: uppercase; opacity: 0.75; text-shadow: 0 1px 8px var(--shadow); font-variant-numeric: tabular-nums;
+  margin-top: 6px; font-family: var(--display); font-weight: 500; font-size: 15px; letter-spacing: 0.14em;
+  text-transform: uppercase; opacity: 0.9; text-shadow: 0 1px 8px var(--shadow); font-variant-numeric: tabular-nums;
   transition: opacity 0.2s, transform 0.25s;
 }
 #bestTag.new { opacity: 1; color: #ffe08a; transform: scale(1.08); }
 #popup {
-  margin-top: 10px; font-family: var(--display); font-weight: 500;
-  font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
+  margin-top: 22px; font-family: var(--display); font-weight: 500;
+  font-size: 23px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
   text-shadow: 0 2px 14px var(--shadow);
   opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
 }
@@ -254,7 +254,7 @@ button { font: inherit; color: inherit; }
   opacity: 0; transform: translate(-50%, 10px) scale(0.96); transition: opacity 0.3s, transform 0.35s cubic-bezier(.2,1.4,.4,1);
 }
 #coach.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
-#coach[data-pos="top"] { top: calc(env(safe-area-inset-top, 0px) + 150px); }
+#coach[data-pos="top"] { top: calc(env(safe-area-inset-top, 0px) + 200px); }
 #coach[data-pos="mid"] { top: 40%; }
 #coach[data-pos="low"] { bottom: calc(env(safe-area-inset-bottom, 0px) + 14%); }
 #coach b { display: block; font: 800 19px/1.15 var(--display); }
