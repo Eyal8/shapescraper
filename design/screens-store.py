@@ -10,6 +10,7 @@ DEVICES = {  # css viewport x3 = store pixel size
     'android': (360, 640, 'android'),   # 1080 x 1920, Google Play phone
 }
 name = sys.argv[1] if len(sys.argv) > 1 else 'iphone'
+HIDE_HELP = '--no-help' in sys.argv  # match builds from before the tutorial (iOS 1.0 build 23)
 w, h, store = DEVICES[name]
 out = root / 'store' / store / 'screenshots'
 url = f'file://{root}/www/index.html#shots'
@@ -23,6 +24,7 @@ with sync_playwright() as p:
         pg = b.new_page(viewport={'width': w, 'height': h}, device_scale_factor=3)
         pg.on('pageerror', lambda e: print('JS error:', e)); pg.goto(url); pg.wait_for_function('window.__ts'); pg.wait_for_timeout(500)
         pg.evaluate(f"localStorage.setItem('ss_games','{games}'); localStorage.setItem('ss_tut_done','1')")
+        if HIDE_HELP: pg.add_style_tag(content='#helpBtn{display:none!important}')
         return pg
     def save(pg, shot):
         d = out / f'{name}-{shot}.png'; pg.screenshot(path=str(d)); Image.open(d).convert('RGB').save(d)  # Apple rejects alpha
