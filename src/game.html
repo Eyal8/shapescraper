@@ -882,7 +882,7 @@ window.Ads = (function () {
     const r = mulberry32(hashStr('ss-daily-v4-' + key));
     const pick = r(), nr = r(), hue = Math.floor(r() * 360);
     const saved = dayRec(key).shape;
-    const pool = DAILY_POOL.filter((x) => isUnlocked(x));
+    const pool = DAILY_POOL; // the same shape for everyone, locked or not: a free preview of shapes still to unlock
     const s = saved && SHAPES.includes(saved) ? saved : pool[Math.floor(pick * pool.length)];
     const n = s === 'square' ? 8 + Math.floor(nr * 5) : 6 + Math.floor(nr * 5); // perfects to land
     return { key, shape: s, goal: { type: 'perfects', n }, hue };
@@ -1597,7 +1597,7 @@ window.Ads = (function () {
         const cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
         $('dailyDate').textContent = fmtDay(key);
         $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
-        $('dailyShape').textContent = SHAPE_NAMES[cfg.shape];
+        $('dailyShape').textContent = SHAPE_NAMES[cfg.shape] + (isUnlocked(cfg.shape) ? '' : ' · preview');
         $('dailyGoal').textContent = rec.done ? 'Complete · see you tomorrow' : goalText(cfg);
         $('dailyStreak').textContent = 'Streak ' + st;
         $('dailyStreak').hidden = !st;
