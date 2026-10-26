@@ -77,7 +77,7 @@ button { font: inherit; color: inherit; }
   text-transform: uppercase; opacity: 0.9; text-shadow: 0 1px 8px var(--shadow); font-variant-numeric: tabular-nums;
   transition: opacity 0.2s, transform 0.25s;
 }
-#bestTag.new { opacity: 1; color: #ffe08a; transform: scale(1.08); }
+#bestTag.new { opacity: 1; color: #ffe08a; transform: scale(1.08); text-shadow: 0 1px 2px rgba(70, 45, 0, 0.7), 0 0 12px rgba(70, 45, 0, 0.45); }
 #popup {
   margin-top: 22px; font-family: var(--display); font-weight: 500;
   font-size: 23px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
@@ -1349,11 +1349,11 @@ window.Ads = (function () {
   }
 
   // Animates a freshly placed layer growing from an older footprint to its own (grow-back and continue boost).
-  function growIn(layer, fromArea) {
+  function growIn(layer, fromArea, delay, glow) {
     const s0 = Math.sqrt(Math.max(0.05, fromArea) / layer.area);
     if (reduceMotion || s0 >= 0.999) return;
     layer.mesh.scale.set(s0, 1, s0);
-    grows.push({ mesh: layer.mesh, s0, t: 0 });
+    grows.push({ mesh: layer.mesh, s0, t: 0, delay: delay || 0, glow: !!glow, dur: glow ? 0.55 : 0.35 });
   }
   const FULL_AREA = () => START_AREA * (runShape === 'square' ? 1 : 0.86);
 
@@ -2090,16 +2090,32 @@ window.Ads = (function () {
   // After a continue, a thin tower gets a fairer second chance: the last placed layer grows in place
   // to half of the full size. Layers already at half size or more stay as they are.
   // Other shapes keep their outline; a sliced square grows its narrow side first and never past the start size.
+  // The top grows to half size and the few layers under it widen in a taper, so the tower flares out
+  // instead of growing a mushroom cap. They rebuild bottom-up in a short gold wave.
+  const REPAIR_DEPTH = 4;
   function boostAfterContinue(quiet) {
     const top = topLayer(), full = FULL_AREA(), target = full * 0.5;
     if (top.area >= target * 0.98) return;
-    const mp = runShape === 'square' ? widenRect(top, target) : regular(runShape, target, top.cx, top.cz);
-    removeMesh(top.mesh);
-    const layer = addLayer(mp, stack.length - 1);
-    stack[stack.length - 1] = layer;
-    growIn(layer, top.area);
-    addRing(mp, (stack.length - 1) * H);
-    if (!quiet) showPopup('Bigger block!', 1200);
+    const n = Math.min(REPAIR_DEPTH, stack.length - 1);
+    let delay = 0;
+    for (let d = n; d >= 0; d--) {
+      const i = stack.length - 1 - d, old = stack[i];
+      const want = target - (target - old.area) * (d / (n + 1)) * 1.15; // top = target, lower layers less
+      if (old.area >= want * 0.98) continue;
+      const mp = runShape === 'square' ? widenRect(old, want) : regular(runShape, want, old.cx, old.cz);
+      removeMesh(old.mesh);
+      const layer = addLayer(mp, i);
+      stack[i] = layer;
+      growIn(layer, old.area, delay, true);
+      delay += 0.08;
+    }
+    const lvl = stack.length - 1, mp = topLayer().mp;
+    setTimeout(() => addRing(mp, lvl * H), delay * 1000 + 250);
+    if (!quiet) {
+      setTimeout(() => showPopup('Tower rebuilt!', 1300), delay * 1000);
+      [523, 659, 784, 1047].forEach((f, k) => setTimeout(() => tone(f, 0.18, 'sine', 0.13), k * 80));
+      buzz([15, 30, 15], 'success');
+    }
   }
   // Rectangle about the same centre with the target area: the short side grows first, both sides capped at START.
   function widenRect(top, target) {
@@ -2391,9 +2407,14 @@ window.Ads = (function () {
 
     for (let i = grows.length - 1; i >= 0; i--) {
       const g = grows[i];
-      g.t = Math.min(1, g.t + dt / 0.35);
-      const e = 1 - Math.pow(1 - g.t, 3), k = g.s0 + (1 - g.s0) * e;
+      if (g.delay > 0) { g.delay -= dt; continue; }
+      g.t = Math.min(1, g.t + dt / g.dur);
+      let e;
+      if (g.glow) { const c1 = 1.7, c3 = c1 + 1, x = g.t - 1; e = 1 + c3 * x * x * x + c1 * x * x; } // a little overshoot, then settle
+      else e = 1 - Math.pow(1 - g.t, 3);
+      const k = g.s0 + (1 - g.s0) * e;
       g.mesh.scale.set(k, 1, k);
+      if (g.glow && g.mesh.material.emissive) g.mesh.material.emissive.setRGB(0.55 * (1 - g.t), 0.42 * (1 - g.t), 0.1 * (1 - g.t));
       if (g.t >= 1) grows.splice(i, 1);
     }
 
