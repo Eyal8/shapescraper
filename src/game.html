@@ -540,7 +540,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 <div id="corner"><button id="helpBtn" class="tog" type="button" aria-label="How to play" hidden>?</button><button id="skipBtn" class="skip" type="button" hidden>Skip</button></div>
 <div id="coach" hidden aria-live="polite"><div class="dots"></div><b></b><span></span></div>
 <div id="tutEnd" hidden><div class="card">
-  <div class="celebrate-title">You're ready!</div>
+  <div class="celebrate-title" id="tutEndTitle">You're ready!</div>
   <button type="button" class="btn primary" id="tutGo">Let's play</button>
 </div></div>
 <div id="intro" hidden role="dialog" aria-modal="true"><div class="card">
@@ -1292,7 +1292,7 @@ window.Ads = (function () {
     updateSub();
   }
 
-  const speed = () => tut ? 3.2 : Math.min(4 + score * 0.14, 11.5);
+  const speed = () => tut ? (tut.auto && !tut.demo ? 6 : 3.2) : Math.min(4 + score * 0.14, 11.5);
 
   function addDebris(mp, y, color, axis, sign) {
     if (!mp.length) return;
@@ -2250,7 +2250,7 @@ window.Ads = (function () {
 
   function startTutorial() {
     if (spin) { world.rotation.y = spin.to; spin = null; }
-    tut = { prevMode: mode, prevShape: shape, tol: 0.06, phase: 'slice', streak: 0, fails: 0, missSeen: false, drops: 0, lock: false, demo: null };
+    tut = { prevMode: mode, prevShape: shape, tol: 0.06, phase: 'slice', streak: 0, fails: 0, missRow: 0, misses: 0, auto: false, missSeen: false, drops: 0, lock: false, demo: null };
     trialRun = false;
     mode = 'endless'; shape = 'square';
     reset();
@@ -2269,31 +2269,46 @@ window.Ads = (function () {
 
   function tutAfterDrop(kind) {
     const t = tut;
-    t.drops++;
+    t.drops++; t.missRow = 0;
+    const L = (x) => t.auto ? '' : x; // the ghost player needs no instructions
     if (t.phase === 'slice') {
       if (kind === 'slice') {
         t.phase = 'perfect'; t.tol = 0.75; combo = 0; t.streak = 0;
-        coach('low', 'Overhang gets cut', 'Now line it up exactly', 2);
-      } else coach('top', 'Perfect! Nothing cut', 'Keep tapping', 1);
+        coach('low', 'Overhang gets cut', L('Now line it up exactly'), 2);
+      } else coach('top', 'Perfect! Nothing cut', L('Keep tapping'), 1);
     } else if (t.phase === 'perfect') {
-      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', '3 Perfects in a row', 3, 0); }
+      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', L('3 Perfects in a row'), 3, 0); }
       else {
         t.streak++;
         if (kind === 'grow' || t.streak >= 3) {
           t.phase = 'grown'; t.lock = true;
-          coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3, 3);
+          coach('top', 'It grew back!', L('Perfects in a row rebuild your tower'), 3, 3);
           setTimeout(() => { if (tut === t) tutNext(); }, 2000);
           return;
         }
-        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', 3, t.streak);
+        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, L('3 in a row grows it back'), 3, t.streak);
       }
     }
-    if (t.drops >= 14 && t.phase !== 'grown') { t.phase = 'grown'; t.lock = true; tutNext(); } // never leave anyone stuck
+    if (t.drops >= 12 && !t.auto && t.phase !== 'grown') tutAuto(); // taking long: show the rest
+  }
+
+  // The ghost player: taps are off and the game drops each block as it passes the right spot,
+  // so a player who keeps missing still sees every lesson in a few seconds.
+  function tutAuto() {
+    const t = tut;
+    t.auto = true; t.lock = true; t.autoWait = 0.9;
+    coach('top', 'Watch this one', '', t.phase === 'slice' ? 1 : 3);
+  }
+  function showTutEnd() {
+    const t = tut;
+    hideCoach();
+    $('tutEndTitle').textContent = t && t.auto ? 'Your turn!' : "You're ready!";
+    $('tutEnd').hidden = false;
   }
 
   function tutNext() {
     const t = tut;
-    if (t.missSeen) { hideCoach(); $('tutEnd').hidden = false; state = 'over'; if (moving) { removeMesh(moving.mesh); moving = null; } return; }
+    if (t.missSeen) { showTutEnd(); state = 'over'; if (moving) { removeMesh(moving.mesh); moving = null; } return; }
     // show a miss: the moving block keeps its normal speed and drops by itself once it is clear of the tower
     t.lock = true; t.demo = { crossed: false };
     coach('low', "Miss the tower and it's over", '', 4);
@@ -2309,16 +2324,17 @@ window.Ads = (function () {
     }
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
-    if (t.demo) { setTimeout(() => { if (tut !== t) return; hideCoach(); $('tutEnd').hidden = false; }, 1400); return; }
+    if (t.demo) { setTimeout(() => { if (tut === t) showTutEnd(); }, 1400); return; }
     // the player missed: that is lesson 4, learned early; explain it and hand back a block
-    t.missSeen = true; t.lock = true; t.streak = 0; combo = 0; t.drops++;
-    coach('low', 'Missed! That ends a run', 'Here comes another block', 4);
+    t.missSeen = true; t.lock = true; t.streak = 0; combo = 0; t.drops++; t.missRow++; t.misses++;
+    const handOver = t.missRow >= 3 || t.misses >= 5 || t.drops >= 12;
+    coach('low', 'Missed! That ends a run', handOver ? '' : 'Here comes another block', 4);
     setTimeout(() => {
       if (tut !== t) return;
-      if (t.drops >= 14) { hideCoach(); $('tutEnd').hidden = false; return; } // never leave anyone stuck
       boostAfterContinue(true); // a thin tower gets wider again so the lesson can go on
-      t.lock = false; state = 'playing'; spawnMoving(); tutCard();
-    }, 1700);
+      state = 'playing'; spawnMoving();
+      if (handOver) tutAuto(); else { t.lock = false; tutCard(); }
+    }, 1200);
   }
 
   // Ends the tutorial; the summary card flies into the help button so players know where to find it again.
@@ -2479,7 +2495,18 @@ window.Ads = (function () {
     }
 
     if (state === 'playing') {
-      if (moving && tut && tut.demo) {
+      if (moving && tut && tut.auto && !tut.demo && (tut.phase === 'slice' || tut.phase === 'perfect')) {
+        const prev = moving.off;
+        moving.off += moving.dir * speed() * dt;
+        if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
+        if (moving.off < -RANGE) { moving.off = -RANGE; moving.dir = 1; }
+        const top = topLayer();
+        moving.mesh.position.x = top.cx + (moving.axis === 'x' ? moving.off : 0);
+        moving.mesh.position.z = top.cz + (moving.axis === 'z' ? moving.off : 0);
+        tut.autoWait -= dt;
+        const aim = tut.phase === 'slice' ? 0.8 * moving.dir : 0; // first a visible cut, then dead-centre drops
+        if (tut.autoWait <= 0 && (prev - aim) * (moving.off - aim) <= 0) { moving.off = aim; tut.autoWait = 0.5; place(); }
+      } else if (moving && tut && tut.demo) {
         moving.off += moving.dir * speed() * dt;
         if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
         if (moving.off < -RANGE) { moving.off = -RANGE; moving.dir = 1; }
