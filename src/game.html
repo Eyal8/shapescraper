@@ -187,6 +187,7 @@ button { font: inherit; color: inherit; }
 .wk i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--chip-line); display: grid; place-items: center; font-style: normal; color: var(--ink-dark); font-size: 11px; }
 .wk.played i { border-color: var(--ink-soft); }
 .wk.done i { background: var(--done); border-color: var(--done); }
+.wk.saved i { border: 1.5px dashed var(--gold); }
 .wk.today { color: var(--ink); }
 .wk.today i { box-shadow: 0 0 0 2px var(--ink); }
 #modeInfo, .info { max-width: 340px; margin: 0; font-size: 13px; line-height: 1.45; letter-spacing: 0.01em; color: var(--ink); }
@@ -336,6 +337,10 @@ button { font: inherit; color: inherit; }
 .day.played { border-color: var(--ink-dim); }
 .day.done { background: var(--done); color: var(--ink-dark); }
 .day.today { box-shadow: inset 0 0 0 2px var(--gold); }
+.day.saved { border: 1.5px dashed var(--gold); }
+.lg-saved { border: 1.5px dashed var(--gold); }
+.save-streak { width: 100%; padding: 11px 16px; }
+#unlockNote.close { color: var(--gold); font-weight: 500; animation: nudge 2.4s ease-in-out infinite; }
 .day[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cal-detail { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 18px; background: var(--chip); text-align: left; }
 .cal-detail b { font: 800 15px var(--display); }
@@ -437,6 +442,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
           <div class="daily-top"><span class="label" id="dailyDate"></span><button type="button" class="link-btn" id="calBtn">Calendar</button></div>
           <div class="daily-goal"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div class="goal-text"><span class="label goal-kicker">Today's shape</span><b id="dailyShape"></b><span id="dailyGoal"></span></div><span class="streak-pill" id="dailyStreak" hidden></span></div>
           <div class="week" id="week" role="button" tabindex="0" aria-label="Open calendar"></div>
+          <button type="button" class="btn gold shine save-streak" data-save-streak hidden></button>
         </div>
         <div class="page-lock" hidden>
           <div class="lock-badge"><svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/><rect x="2" y="5.5" width="8" height="5.5" rx="1.2"/></svg></div>
@@ -514,13 +520,14 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <div><span class="big" id="calStreak">0</span><span class="label">Day streak</span></div>
       <div><span class="big" id="calDone">0</span><span class="label">Days complete</span></div>
     </div>
+    <button type="button" class="btn gold shine save-streak" data-save-streak hidden></button>
     <div class="cal-nav">
       <button type="button" class="icon-btn" id="calPrev" aria-label="Previous month"><svg viewBox="0 0 14 14"><path d="M9 2L4 7l5 5"/></svg></button>
       <span id="calMonth"></span>
       <button type="button" class="icon-btn" id="calNext" aria-label="Next month"><svg viewBox="0 0 14 14"><path d="M5 2l5 5-5 5"/></svg></button>
     </div>
     <div class="cal-grid" id="calGrid"></div>
-    <div class="cal-legend"><span><i class="lg-done"></i>Complete</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span></div>
+    <div class="cal-legend"><span><i class="lg-done"></i>Complete</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span><span id="lgSaved" hidden><i class="lg-saved"></i>Saved</span></div>
     <div class="cal-detail">
       <b id="calDayTitle"></b>
       <span class="info" id="calDayGoal"></span>
@@ -897,10 +904,49 @@ window.Ads = (function () {
     const all = days();
     let d = new Date(); d.setHours(12, 0, 0, 0);
     if (!(all[dateToKey(d)] && all[dateToKey(d)].onTime)) d.setDate(d.getDate() - 1); // today not done yet: count up to yesterday
+    return streakBack(all, d);
+  }
+  // counts finished days going back from d; a saved day keeps the streak alive but does not add to it
+  function streakBack(all, d) {
     let n = 0;
-    while (all[dateToKey(d)] && all[dateToKey(d)].onTime) { n++; d.setDate(d.getDate() - 1); }
+    for (;;) {
+      const r = all[dateToKey(d)];
+      if (r && r.onTime) n++;
+      else if (!(r && r.saved)) break;
+      d.setDate(d.getDate() - 1);
+    }
     return n;
   }
+  // Streak protection: missed exactly yesterday, had a streak of 2+ before it, and no save in the last 7 days.
+  function streakAtRisk() {
+    const all = days(), y = dayKey(-1), yr = all[y];
+    if (yr && (yr.onTime || yr.saved)) return 0;
+    const last = store.get('ss_streak_save', '');
+    if (last && (keyToDate(dayKey()) - keyToDate(last)) / 864e5 < 7) return 0;
+    const d = keyToDate(dayKey(-2)); d.setHours(12, 0, 0, 0);
+    const n = streakBack(all, d);
+    return n >= 2 ? n : 0;
+  }
+  async function saveStreak() {
+    const n = streakAtRisk();
+    if (!n || busy) return;
+    if (!(await rewarded(true))) return;
+    const y = dayKey(-1), rec = dayRec(y);
+    rec.saved = true; saveDay(y, rec);
+    store.set('ss_streak_save', dayKey());
+    showPopup(n + '-day streak saved!', 1800); celebrate(true);
+    buzz([20, 40, 20], 'success');
+    if (!$('calendar').hidden) renderCalendar();
+    if (state === 'menu') renderMenu();
+  }
+  function renderSaveStreak() {
+    const n = streakAtRisk();
+    document.querySelectorAll('[data-save-streak]').forEach((b) => {
+      b.hidden = !n;
+      if (n) b.innerHTML = 'Save your ' + n + '-day streak<small>Missed yesterday · ' + adNote(true) + '</small>';
+    });
+  }
+  document.querySelectorAll('[data-save-streak]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); initAudio(); saveStreak(); }));
   const daysDone = () => Object.values(days()).filter((r) => r.done).length;
   function fmtDay(key, opts) { return keyToDate(key).toLocaleDateString(undefined, opts || { weekday: 'short', month: 'short', day: 'numeric' }); }
 
@@ -1296,7 +1342,7 @@ window.Ads = (function () {
       else showPopup(label);
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
-      buzz(10, 'perfect');
+      buzz(10, mode === 'daily' && !tut ? 'pip' : 'perfect');
     } else {
       combo = 0;
       const overlap = clip('intersection', top.mp, dropped);
@@ -1548,7 +1594,7 @@ window.Ads = (function () {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
       const k = dateToKey(d), rec = dayRec(k), isToday = k === dayKey();
-      const cls = 'wk' + (rec.done ? ' done' : rec.played ? ' played' : '') + (isToday ? ' today' : '');
+      const cls = 'wk' + (rec.done ? ' done' : rec.saved ? ' saved' : rec.played ? ' played' : '') + (isToday ? ' today' : '');
       html += '<div class="' + cls + '">' + d.toLocaleDateString(undefined, { weekday: 'narrow' }) + '<i>' + (rec.done ? '&#10003;' : '') + '</i></div>';
     }
     return html;
@@ -1603,6 +1649,7 @@ window.Ads = (function () {
         $('dailyStreak').hidden = !st;
         $('week').innerHTML = weekStrip();
         play.textContent = rec.done ? 'Play again' : 'Play today';
+        renderSaveStreak();
         return;
       }
       const label = page.querySelector('[data-best-label]'), big = page.querySelector('[data-best]'), sub = page.querySelector('[data-best-sub]');
@@ -1812,6 +1859,8 @@ window.Ads = (function () {
   function renderCalendar() {
     const { min, max } = calRange();
     $('calStreak').textContent = streakNow();
+    renderSaveStreak();
+    $('lgSaved').hidden = !Object.values(days()).some((r) => r.saved);
     $('calDone').textContent = daysDone();
     $('calMonth').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1, 12);
@@ -1825,8 +1874,8 @@ window.Ads = (function () {
     for (let n = 1; n <= last.getDate(); n++) {
       const k = dateToKey(new Date(first.getFullYear(), first.getMonth(), n, 12)), rec = dayRec(k);
       const off = k < min || k > max;
-      const cls = 'day' + (rec.done ? ' done' : rec.played ? ' played' : '') + (k === max ? ' today' : '');
-      const label = fmtDay(k, { weekday: 'long', month: 'long', day: 'numeric' }) + (rec.done ? ', complete' : rec.played ? ', played' : '');
+      const cls = 'day' + (rec.done ? ' done' : rec.played ? ' played' : '') + (rec.saved && !rec.done ? ' saved' : '') + (k === max ? ' today' : '');
+      const label = fmtDay(k, { weekday: 'long', month: 'long', day: 'numeric' }) + (rec.done ? ', complete' : rec.saved ? ', streak saved' : rec.played ? ', played' : '');
       html += '<button type="button" class="' + cls + '" data-day="' + k + '" aria-pressed="' + (k === calSel) + '" aria-label="' + label + '"' + (off ? ' disabled' : '') + '>' + n + '</button>';
     }
     $('calGrid').innerHTML = html;
@@ -2030,6 +2079,16 @@ window.Ads = (function () {
       const notes = [];
       opened.forEach((o) => notes.push(o + ' unlocked'));
       const un = $('unlockNote');
+      let close = '';
+      if ((mode === 'endless' || mode === 'time') && !trial && !fresh) {
+        const next = SHAPES[SHAPES.indexOf(runShape) + 1];
+        if (next && !isUnlocked(next)) {
+          const need = UNLOCK[mode][next];
+          if (score < need && need - score <= Math.max(3, Math.ceil(need * 0.15))) close = 'So close! ' + score + ' / ' + need + ' to unlock ' + SHAPE_NAMES[next];
+        }
+      }
+      if (close) notes.unshift(close);
+      un.classList.toggle('close', !!close);
       un.textContent = notes.join(' · ');
       un.hidden = !notes.length;
       scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true; $('offer').hidden = true;
@@ -2330,6 +2389,7 @@ window.Ads = (function () {
       if (Haptics) {
         if (kind === 'slice') Haptics.impact({ style: 'LIGHT' });
         else if (kind === 'perfect') Haptics.impact({ style: combo >= 3 ? 'HEAVY' : 'MEDIUM' });
+        else if (kind === 'pip') { const k = dcfg ? perfects / dcfg.goal.n : 0; Haptics.impact({ style: k < 0.4 ? 'LIGHT' : k < 0.8 ? 'MEDIUM' : 'HEAVY' }); }
         else if (kind === 'success') Haptics.notification({ type: 'SUCCESS' });
         else if (kind === 'over') Haptics.notification({ type: 'ERROR' });
         return;
