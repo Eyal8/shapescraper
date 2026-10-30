@@ -23,7 +23,7 @@ with sync_playwright() as p:
     def page(games=12):
         pg = b.new_page(viewport={'width': w, 'height': h}, device_scale_factor=3)
         pg.on('pageerror', lambda e: print('JS error:', e)); pg.goto(url); pg.wait_for_function('window.__ts'); pg.wait_for_timeout(500)
-        pg.evaluate(f"localStorage.setItem('ss_games','{games}'); localStorage.setItem('ss_tut_done','1')")
+        pg.evaluate(f"localStorage.setItem('ss_games','{games}'); localStorage.setItem('ss_tut_done','1'); localStorage.setItem('ss_intro_daily','1'); localStorage.setItem('ss_cont_tip','2')")  # skip one-time popups
         if HIDE_HELP: pg.add_style_tag(content='#helpBtn{display:none!important}')
         return pg
     def save(pg, shot):
