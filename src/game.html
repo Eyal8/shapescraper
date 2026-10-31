@@ -85,6 +85,7 @@ button { font: inherit; color: inherit; }
   opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
 }
 #popup.show { opacity: 1; transform: none; }
+#popup small { display: block; margin-top: 4px; font-size: 15px; letter-spacing: 0.14em; color: var(--gold); }
 #popup.gold { padding: 6px 14px; border-radius: 999px; font-weight: 800; color: #fff; background: rgba(20,23,40,0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-shadow: none; }
 #hint {
   position: fixed; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -109,6 +110,25 @@ button { font: inherit; color: inherit; }
   animation: pop 2.2s ease forwards; z-index: 16;
 }
 #banner small { display: block; margin-top: 8px; font: 500 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); }
+#thanks { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(circle at 50% 42%, rgba(255, 209, 102, 0.42), rgba(20, 23, 40, 0.72) 70%);
+  opacity: 0; transition: opacity 0.3s; }
+#thanks.show { opacity: 1; }
+#thanks .thanks-card { position: relative; width: min(340px, 100%); padding: 28px 22px 20px; border-radius: 28px; text-align: center;
+  background: var(--card-strong); border: 2px solid var(--gold); box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.18), 0 20px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden; transform: scale(0.6); }
+#thanks.show .thanks-card { animation: thanksIn 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) forwards; }
+#thanks .thanks-card::after { content: ''; position: absolute; top: 0; bottom: 0; width: 45%; left: -60%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent); animation: sweep 2.2s ease 0.4s infinite; }
+#thanks .thanks-kicker { font: 500 12px var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); }
+#thanks .thanks-title { margin-top: 8px; font-family: var(--display); font-weight: 800; font-size: clamp(26px, 8vw, 34px); line-height: 1.05; }
+#thanks .thanks-shapes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px 0 14px; }
+#thanks .thanks-shapes svg { width: 28px; height: 28px; fill: var(--gold); opacity: 0; animation: stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+#thanks .thanks-shapes.one svg { width: 56px; height: 56px; }
+#thanks .thanks-sub { font: 500 12px/1.5 var(--mono); letter-spacing: 0.06em; opacity: 0.85; }
+#thanks .thanks-tap { margin-top: 16px; font: 500 10px var(--mono); letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
+@keyframes thanksIn { 0% { transform: scale(0.6) rotate(-4deg); } 100% { transform: none; } }
+.link-btn.loading { opacity: 0.55; text-decoration: none; }
 @keyframes pop {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
   12% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
@@ -509,6 +529,15 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   </div>
 </div>
 <div id="banner" hidden></div>
+<div id="thanks" hidden role="dialog" aria-live="polite">
+  <div class="thanks-card">
+    <div class="thanks-kicker">Thank you!</div>
+    <div class="thanks-title" id="thanksTitle"></div>
+    <div class="thanks-shapes" id="thanksShapes"></div>
+    <div class="thanks-sub" id="thanksSub"></div>
+    <div class="thanks-tap">Tap to continue</div>
+  </div>
+</div>
 
 <div id="calendar" hidden role="dialog" aria-modal="true" aria-labelledby="calTitle">
   <div class="cal-card">
@@ -1334,12 +1363,13 @@ window.Ads = (function () {
       placed = top.mp;
       if (combo >= 3 && top.area < START_AREA * (runShape === 'square' ? 1 : 0.86)) {
         const grown = Math.min(top.area * (tut ? 1.7 : 1.2), START_AREA * (runShape === 'square' ? 1 : 0.86));
-        placed = runShape === 'square' ? growRect(top.mp, Math.sqrt(grown / top.area)) : regular(runShape, grown, top.cx, top.cz);
+        placed = runShape === 'square' ? widenRect(top, grown) : regular(runShape, grown, top.cx, top.cz);
         grewFrom = top.area;
       }
-      const label = (combo > 1 ? 'Perfect ×' + combo : 'Perfect') + (grewFrom ? ' · Grow!' : '');
-      if (mode === 'time') { timeLeft += TIME_BONUS; showPopup(label + ' · +' + TIME_BONUS + 's'); }
-      else showPopup(label);
+      const label = combo > 1 ? 'Perfect ×' + combo : 'Perfect';
+      const extra = [grewFrom ? 'Grow!' : '', mode === 'time' ? '+' + TIME_BONUS + ' seconds' : ''].filter(Boolean);
+      if (mode === 'time') timeLeft += TIME_BONUS;
+      showPopup(label, 0, extra);
       addRing(placed, y);
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
       buzz(10, mode === 'daily' && !tut ? 'pip' : 'perfect');
@@ -1385,13 +1415,6 @@ window.Ads = (function () {
     checkBest(newlyUnlocked !== before);
     if (bestBeaten) renderBest();
     spawnMoving();
-  }
-
-  // Grows a rectangle about its centre (square mode grow-back).
-  function growRect(mp, s) {
-    const [cx, cz] = centroid(mp);
-    const lim = START / 2;
-    return mapPts(mp, (x, z) => [Math.max(cx - lim * 2, cx + (x - cx) * s), Math.max(cz - lim * 2, cz + (z - cz) * s)]);
   }
 
   // Animates a freshly placed layer growing from an older footprint to its own (grow-back and continue boost).
@@ -1440,8 +1463,9 @@ window.Ads = (function () {
   }
 
   let popupTimer;
-  function showPopup(text, ms) {
+  function showPopup(text, ms, sub) {
     popupEl.textContent = text;
+    [].concat(sub || []).forEach((t) => { const s2 = document.createElement('small'); s2.textContent = t; popupEl.append(s2); });
     popupEl.classList.add('show');
     clearTimeout(popupTimer);
     popupTimer = setTimeout(() => popupEl.classList.remove('show'), ms || 700);
@@ -1526,11 +1550,14 @@ window.Ads = (function () {
   let parts = [];
   function sizeFx() { const d = Math.min(window.devicePixelRatio || 1, 2); fx.width = innerWidth * d; fx.height = innerHeight * d; fctx.setTransform(d, 0, 0, d, 0, 0); }
   window.addEventListener('resize', sizeFx); sizeFx();
+  let burstGold = false;
+  const GOLD = ['#ffd166', '#ffe9a8', '#ffffff', '#ffc23d', '#ffd166', '#ff6b9a'];
   function burst(x, y, n, angle, spread, power) {
+    const pal = burstGold ? GOLD : CONFETTI;
     for (let i = 0; i < n; i++) {
       const a = angle + (Math.random() - 0.5) * spread, v = power * (0.55 + Math.random() * 0.6);
       parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8,
-        r: Math.random() * 6, vr: (Math.random() - 0.5) * 14, flip: Math.random() * 6, c: CONFETTI[i % CONFETTI.length], life: 2.6 + Math.random() });
+        r: Math.random() * 6, vr: (Math.random() - 0.5) * 14, flip: Math.random() * 6, c: pal[i % pal.length], life: 2.6 + Math.random() });
     }
   }
   function celebrate(big) {
@@ -1913,45 +1940,91 @@ window.Ads = (function () {
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('calendar').hidden) closeCalendar(); });
 
   // ---------- Remove Ads ----------
-  $('noAdsBtn').addEventListener('click', async () => {
-    if (busy || !window.Store || window.Store.noAds()) return;
+  // Purchase buttons dim and say "Connecting…" until the store sheet answers (it can take a few seconds).
+  async function withLoading(btn, fn) {
+    const html = btn.innerHTML;
+    btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Connecting…';
+    try { return await fn(); }
+    finally { btn.classList.remove('loading'); btn.disabled = false; btn.innerHTML = html; }
+  }
+  async function buyWith(btn, key) {
     busy = true;
-    const r = await window.Store.buy();
+    const r = await withLoading(btn, () => window.Store.buy(key));
     busy = false;
-    if (r === 'bought') { showPopup('Ads removed. Thank you!', 1800); celebrate(false); }
+    if (r === 'bought') thanks(key === 'allShapes' ? 'allShapes' : 'noAds');
     else if (r === 'error') showPopup('Purchase did not go through', 1800);
+    return r;
+  }
+  $('noAdsBtn').addEventListener('click', async (e) => {
+    if (busy || !window.Store || window.Store.noAds()) return;
+    await buyWith(e.currentTarget);
     renderMenu();
   });
-  $('trialBuyBtn').addEventListener('click', async () => {
+  $('trialBuyBtn').addEventListener('click', async (e) => {
     if (busy || !window.Store) return;
-    busy = true;
-    const r = await window.Store.buy('allShapes');
-    busy = false;
-    if (r === 'bought') {
+    if (await buyWith(e.currentTarget, 'allShapes') === 'bought') {
       trialRun = false;
-      showPopup('All shapes unlocked!', 1800); celebrate(true);
       $('trialBuyBtn').hidden = true;
       $('againBtn').classList.add('primary');
       $('againBtn').textContent = 'Play ' + SHAPE_NAMES[runShape].toLowerCase();
-    } else if (r === 'error') showPopup('Purchase did not go through', 1800);
+    }
   });
-  document.querySelectorAll('[data-buy-all]').forEach((b) => b.addEventListener('click', async () => {
+  document.querySelectorAll('[data-buy-all]').forEach((b) => b.addEventListener('click', async (e) => {
     if (busy || !window.Store || window.Store.allShapes()) return;
-    busy = true;
-    const r = await window.Store.buy('allShapes');
-    busy = false;
-    if (r === 'bought') { showPopup('All shapes unlocked!', 1800); celebrate(false); }
-    else if (r === 'error') showPopup('Purchase did not go through', 1800);
+    await buyWith(e.currentTarget, 'allShapes');
     renderMenu();
   }));
-  $('restoreBtn').addEventListener('click', async () => {
+  $('restoreBtn').addEventListener('click', async (e) => {
     if (busy || !window.Store) return;
     busy = true;
-    const owned = await window.Store.restore();
+    const owned = await withLoading(e.currentTarget, () => window.Store.restore());
     busy = false;
     showPopup(owned.length ? (owned.length > 1 ? 'Purchases restored' : 'Purchase restored') : 'No purchases found for this account', 2000);
     renderMenu();
   });
+
+  // ---------- thank-you celebration after a purchase (bigger than any in-game celebration) ----------
+  let thanksTimer = 0;
+  function thanks(kind) {
+    const el = $('thanks');
+    const all = kind === 'allShapes';
+    $('thanksTitle').textContent = all ? 'All shapes unlocked!' : 'Ads removed!';
+    $('thanksSub').textContent = all ? 'Every shape is yours. Go build.' : 'No more ads. Continues and past Daily days are free.';
+    const row = $('thanksShapes');
+    row.innerHTML = '';
+    (all ? SHAPES : ['star']).forEach((k, i) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      g.setAttribute('viewBox', '-1 -1 2 2'); g.setAttribute('aria-hidden', 'true');
+      g.innerHTML = '<path d="' + glyphPath(k) + '"/>';
+      g.style.animationDelay = (0.25 + i * 0.09) + 's';
+      row.append(g);
+    });
+    row.classList.toggle('one', !all);
+    el.hidden = false; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    // fanfare, haptics and three waves of gold-heavy confetti
+    initAudio();
+    [523, 659, 784, 1047, 1319].forEach((f, k) => setTimeout(() => tone(f, 0.28, 'sine', 0.16), k * 90));
+    setTimeout(() => { tone(1047, 0.7, 'triangle', 0.12); tone(1568, 0.7, 'sine', 0.09); }, 520);
+    buzz([20, 40, 20, 40, 60], 'success');
+    if (Haptics) setTimeout(() => { try { Haptics.impact({ style: 'HEAVY' }); } catch (e) {} }, 450);
+    if (!reduceMotion) {
+      const w = innerWidth, h = innerHeight;
+      burstGold = true;
+      burst(0, h, 90, -Math.PI / 3, 0.7, 1500); burst(w, h, 90, -Math.PI * 2 / 3, 0.7, 1500);
+      setTimeout(() => burst(w / 2, h * 0.35, 110, -Math.PI / 2, Math.PI * 2, 900), 350);
+      setTimeout(() => { burst(w * 0.15, h * 0.2, 60, Math.PI / 2, Math.PI, 600); burst(w * 0.85, h * 0.2, 60, Math.PI / 2, Math.PI, 600); burstGold = false; }, 800);
+    }
+    clearTimeout(thanksTimer);
+    thanksTimer = setTimeout(closeThanks, 4200);
+  }
+  function closeThanks() {
+    clearTimeout(thanksTimer);
+    const el = $('thanks');
+    if (el.hidden) return;
+    el.classList.remove('show');
+    setTimeout(() => { el.hidden = true; }, 300);
+  }
+  $('thanks').addEventListener('click', closeThanks);
 
   function showMenu() {
     state = 'menu';
@@ -2195,7 +2268,10 @@ window.Ads = (function () {
 
 
   function start() {
-    if (spin) { world.rotation.y = spin.to; spin = null; }
+    // the menu turns the tower a quarter turn per mode; every run starts at the same angle so blocks
+    // always come from the upper left and upper right
+    const cur = spin ? spin.to : world.rotation.y, home = Math.round(cur / (Math.PI * 2)) * Math.PI * 2;
+    spin = Math.abs(world.rotation.y - home) > 1e-3 ? { from: world.rotation.y, to: home, t: 0, dur: 0.45 } : null;
     $('helpBtn').hidden = true;
     reset();
     state = 'playing';
@@ -2249,7 +2325,7 @@ window.Ads = (function () {
   function hideCoach() { clearTimeout(coachTimer); const c = $('coach'); c.classList.remove('show'); setTimeout(() => { if (!c.classList.contains('show')) c.hidden = true; }, 300); }
 
   function startTutorial() {
-    if (spin) { world.rotation.y = spin.to; spin = null; }
+    { const cur = spin ? spin.to : world.rotation.y; world.rotation.y = Math.round(cur / (Math.PI * 2)) * Math.PI * 2; spin = null; }
     tut = { prevMode: mode, prevShape: shape, tol: 0.06, phase: 'slice', streak: 0, fails: 0, missRow: 0, misses: 0, auto: false, missSeen: false, drops: 0, lock: false, demo: null };
     trialRun = false;
     mode = 'endless'; shape = 'square';
