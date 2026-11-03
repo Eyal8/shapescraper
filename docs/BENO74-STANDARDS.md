@@ -1,6 +1,6 @@
 <!-- Synced copy. Do not edit here: the source is beno-studio-site/standards/BENO74-STANDARDS.md -->
 
-# BENO74 Studios: Legal, Privacy, Ads & Branding Standard (v1.3.1, November 3, 2026)
+# BENO74 Studios: Legal, Privacy, Ads & Branding Standard (v1.4, November 3, 2026)
 
 Single source of truth for every BENO74 game (Shapescraper, Pair by Pair, Sorté, Tile Wave, Landscraper and future titles).
 Every chat, handoff and coding agent (Claude, Codex) follows this document. A game may deviate only if the deviation is written in its row in section 10 with a reason.
@@ -43,7 +43,7 @@ Not legal advice: this is the studio's product policy. Items marked **[VERIFY]**
 - Messages configured in AdMob Privacy & messaging for every app: **EU/UK (GDPR)** and **US state regulations**. **[VERIFY]** US messages are published for each app.
 - Every game has a menu entry **"Ad privacy choices"** that opens the UMP privacy options form (shown when required, harmless otherwise).
 - UMP covers consent; it does not replace the privacy policy, store disclosures or age-related obligations.
-- iOS ATT: one studio-wide decision for all games. **[VERIFY / DECIDE]** current Shapescraper behaviour and copy it to all games (either IDFA explainer + ATT via UMP, or no ATT prompt and no IDFA).
+- iOS ATT: one studio-wide behaviour (proposed Nov 3, 2026 from Shapescraper, **Eyal to confirm**): at launch run UMP consent first; then, only if the ATT status is `notDetermined`, show the system ATT prompt once. No custom pre-prompt screen, no IDFA explainer message. Ads work either way (non-personalised when tracking is denied). The Info.plist `NSUserTrackingUsageDescription` text must be present and honest.
 - We store nothing about the player on a server. Local save data (scores, streaks, purchases cache) stays on device.
 
 ## 5. Store age-signal laws (US: Texas, Utah, others coming)
@@ -105,7 +105,7 @@ Not legal advice: this is the studio's product policy. Items marked **[VERIFY]**
 ## 10. Per-game status
 | Game | Stack (ads / purchases) | Audience | Remove Ads model | UMP / privacy button | Deviations / open items |
 |---|---|---|---|---|---|
-| Shapescraper | Capacitor 8: `@capacitor-community/admob` 8.2.1, `@capgo/native-purchases` 8.8.1 | 13+ | **A** (optional rewarded) | "Ad privacy choices" in menu | 1.1: add `maxAdContentRating = T`; verify code matches Model A; ATT decision; **iOS launch screen still shows the default Capacitor logo on white → replace (section 11)**; add first-launch intro + menu credit |
+| Shapescraper | Capacitor 8: `@capacitor-community/admob` 8.2.1, `@capgo/native-purchases` 8.8.1 | 13+ | **A with written exceptions** (audit Nov 3): Continue, past Daily days and streak save are free for buyers (same caps: one continue per game, past day one-time unlock, streak save once per 7 days); shape trial runs still need a rewarded ad (keeps Unlock All Shapes meaningful). **Eyal to confirm**; then the Remove Ads store description should read: "Removes all ads between games. Continues, past Daily days and streak saves become free." | "Ad privacy choices" in menu | Done in 1.1 (commit 1d14adb): `maxAdContentRating = Teen`; launch screens in game colours (no Capacitor logo); Android 12 branding image; first-launch intro; menu credit. ATT = studio proposal in section 4 |
 | Pair by Pair | Expo React Native, repo `Eyal8/number-match` (former name) | 13+ | **B** (ad-free rewards) | UMP tested Android + iOS; US messages pending | R4C.2A revision: remove blanket age blocking; audit rewarded entry points (hints, hammer, Daily Attempt); **open: buyer cap vs unlimited**; check launch screen is not the Expo default (section 11) |
 | Sorté | repo `Eyal8/sorte` (see its docs/ADMOB.md) | 13+ | — | — | Not yet aligned |
 | Tile Wave | Expo React Native, repo `Eyal8/tile-wave` (see docs/ads-privacy-consent.md) | 13+ | — | — | Not yet aligned |
@@ -121,6 +121,7 @@ Based on Apple HIG (Launching, Branding) and the Android 12+ SplashScreen API. G
 5. Never add a separate studio splash at every launch, and never hold the player on any branding screen while the game is already ready.
 
 ## Changelog
+- v1.4 (Nov 3, 2026): ATT behaviour proposed studio-wide (UMP first, then system prompt if not determined); Shapescraper Remove Ads audited and recorded as Model A with written exceptions; Shapescraper 1.1 branding/launch items done.
 - v1.3.1 (Nov 3, 2026): Tile Wave added; repo names in section 10; copies synced to shapescraper, sorte, tile-wave and number-match.
 - v1.3 (Nov 1, 2026): section 11 Branding & launch (system launch screen = first screen, no logos; first-launch-only studio intro; menu credit; Android 12 branding image); purchase thank-you celebration rule; checklist items; Shapescraper Capacitor-logo launch screen and Pair by Pair Expo check added as open items. Moved to `beno-studio-site/standards/` as the shared source of truth.
 - v1.2 (Nov 1, 2026): standard is behaviour-level, SDKs per game; `maxAdContentRating` vs age-restricted treatment clarified; 13-15 regional note; age-signal laws partly in effect, verify per release; Model B caps rule requires an audit and an explicit owner decision where no real cap exists.
