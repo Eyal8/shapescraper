@@ -711,8 +711,9 @@ window.Ads = (function () {
     android: { interstitial: 'ca-app-pub-5535097818156227/3884362464', rewarded: 'ca-app-pub-5535097818156227/8293460890' },
     ios: { interstitial: 'ca-app-pub-5535097818156227/4814300757', rewarded: 'ca-app-pub-5535097818156227/5751058031' },
     testing: true,
-    interstitialEveryGames: 3,
-    minSecondsBetweenInterstitials: 60
+    interstitialEveryGames: 2,
+    minSecondsBetweenInterstitials: 45,
+    interstitialFreeGames: 3 // a new player's first games never get an interstitial
   };
   const cap = window.Capacitor;
   const platform = cap && cap.getPlatform ? cap.getPlatform() : 'web';
@@ -820,7 +821,8 @@ window.Ads = (function () {
 
   async function maybeInterstitial(gamesPlayed) {
     if (adFree()) return;
-    const due = gamesPlayed > 0 && gamesPlayed % CONFIG.interstitialEveryGames === 0;
+    let total = 0; try { total = Number(localStorage.getItem('ss_games') || 0); } catch (e) {}
+    const due = gamesPlayed > 0 && total > CONFIG.interstitialFreeGames && gamesPlayed % CONFIG.interstitialEveryGames === 0;
     const gap = CONFIG.minSecondsBetweenInterstitials * 1000;
     const spaced = Date.now() - lastInterstitial > gap && Date.now() - lastRewarded > gap;
     if (!due || !spaced) return;
