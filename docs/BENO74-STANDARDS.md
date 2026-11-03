@@ -1,8 +1,8 @@
 <!-- Synced copy. Do not edit here: the source is beno-studio-site/standards/BENO74-STANDARDS.md -->
 
-# BENO74 Studios: Legal, Privacy, Ads & Branding Standard (v1.3, November 1, 2026)
+# BENO74 Studios: Legal, Privacy, Ads & Branding Standard (v1.3.1, November 3, 2026)
 
-Single source of truth for every BENO74 game (Shapescraper, Pair by Pair, Sorté, Landscraper and future titles).
+Single source of truth for every BENO74 game (Shapescraper, Pair by Pair, Sorté, Tile Wave, Landscraper and future titles).
 Every chat, handoff and coding agent (Claude, Codex) follows this document. A game may deviate only if the deviation is written in its row in section 10 with a reason.
 This document defines **behaviour**. SDKs and libraries are chosen per game (Capacitor, Expo React Native, etc.) and listed in section 10.
 Not legal advice: this is the studio's product policy. Items marked **[VERIFY]** need a check against current official docs before release. Product decisions and conservative design choices are not compliance guarantees.
@@ -106,8 +106,9 @@ Not legal advice: this is the studio's product policy. Items marked **[VERIFY]**
 | Game | Stack (ads / purchases) | Audience | Remove Ads model | UMP / privacy button | Deviations / open items |
 |---|---|---|---|---|---|
 | Shapescraper | Capacitor 8: `@capacitor-community/admob` 8.2.1, `@capgo/native-purchases` 8.8.1 | 13+ | **A** (optional rewarded) | "Ad privacy choices" in menu | 1.1: add `maxAdContentRating = T`; verify code matches Model A; ATT decision; **iOS launch screen still shows the default Capacitor logo on white → replace (section 11)**; add first-launch intro + menu credit |
-| Pair by Pair | Expo React Native (ads/purchase libs: see its repo) | 13+ | **B** (ad-free rewards) | UMP tested Android + iOS; US messages pending | R4C.2A revision: remove blanket age blocking; audit rewarded entry points (hints, hammer, Daily Attempt); **open: buyer cap vs unlimited**; check launch screen is not the Expo default (section 11) |
-| Sorté | — | 13+ | — | — | Not yet aligned |
+| Pair by Pair | Expo React Native, repo `Eyal8/number-match` (former name) | 13+ | **B** (ad-free rewards) | UMP tested Android + iOS; US messages pending | R4C.2A revision: remove blanket age blocking; audit rewarded entry points (hints, hammer, Daily Attempt); **open: buyer cap vs unlimited**; check launch screen is not the Expo default (section 11) |
+| Sorté | repo `Eyal8/sorte` (see its docs/ADMOB.md) | 13+ | — | — | Not yet aligned |
+| Tile Wave | Expo React Native, repo `Eyal8/tile-wave` (see docs/ads-privacy-consent.md) | 13+ | — | — | Not yet aligned |
 | Landscraper | — | 13+ | — | — | Not started |
 
 ## 11. Branding & launch
@@ -120,6 +121,7 @@ Based on Apple HIG (Launching, Branding) and the Android 12+ SplashScreen API. G
 5. Never add a separate studio splash at every launch, and never hold the player on any branding screen while the game is already ready.
 
 ## Changelog
+- v1.3.1 (Nov 3, 2026): Tile Wave added; repo names in section 10; copies synced to shapescraper, sorte, tile-wave (number-match pending access).
 - v1.3 (Nov 1, 2026): section 11 Branding & launch (system launch screen = first screen, no logos; first-launch-only studio intro; menu credit; Android 12 branding image); purchase thank-you celebration rule; checklist items; Shapescraper Capacitor-logo launch screen and Pair by Pair Expo check added as open items. Moved to `beno-studio-site/standards/` as the shared source of truth.
 - v1.2 (Nov 1, 2026): standard is behaviour-level, SDKs per game; `maxAdContentRating` vs age-restricted treatment clarified; 13-15 regional note; age-signal laws partly in effect, verify per release; Model B caps rule requires an audit and an explicit owner decision where no real cap exists.
 - v1.1 (Nov 1, 2026): Remove Ads rule (6.1) with Model A / Model B; Shapescraper = A, Pair by Pair = B.
