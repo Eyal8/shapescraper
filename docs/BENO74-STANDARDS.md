@@ -121,7 +121,7 @@ Based on Apple HIG (Launching, Branding) and the Android 12+ SplashScreen API. G
 5. Never add a separate studio splash at every launch, and never hold the player on any branding screen while the game is already ready.
 
 ## Changelog
-- v1.3.1 (Nov 3, 2026): Tile Wave added; repo names in section 10; copies synced to shapescraper, sorte, tile-wave (number-match pending access).
+- v1.3.1 (Nov 3, 2026): Tile Wave added; repo names in section 10; copies synced to shapescraper, sorte, tile-wave and number-match.
 - v1.3 (Nov 1, 2026): section 11 Branding & launch (system launch screen = first screen, no logos; first-launch-only studio intro; menu credit; Android 12 branding image); purchase thank-you celebration rule; checklist items; Shapescraper Capacitor-logo launch screen and Pair by Pair Expo check added as open items. Moved to `beno-studio-site/standards/` as the shared source of truth.
 - v1.2 (Nov 1, 2026): standard is behaviour-level, SDKs per game; `maxAdContentRating` vs age-restricted treatment clarified; 13-15 regional note; age-signal laws partly in effect, verify per release; Model B caps rule requires an audit and an explicit owner decision where no real cap exists.
 - v1.1 (Nov 1, 2026): Remove Ads rule (6.1) with Model A / Model B; Shapescraper = A, Pair by Pair = B.
