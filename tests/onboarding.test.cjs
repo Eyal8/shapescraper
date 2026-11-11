@@ -12,7 +12,7 @@ before(async () => {
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 });
 after(async () => { await browser?.close(); assert.deepEqual(errors, [], 'no page errors'); });
-async function fixture(seed = {}, options = {}, shots = true) {
+async function fixture(seed = {}, options = {}, shots = true, native = null) {
   const context = await browser.newContext({ viewport: { width: 360, height: 640 }, ...options });
   const page = await context.newPage();
   page.on('pageerror', e => { errors.push(e.message); console.error('Page error:', e.message); });
@@ -23,8 +23,39 @@ async function fixture(seed = {}, options = {}, shots = true) {
       localStorage.setItem('_qa_seed', '1');
     }
   }, { ts_muted: 1, ss_haptics: 0, ...seed });
+  if (native) await page.addInitScript(config => {
+    // Exercise the real Capacitor JS facade with a controlled native transport, not real SDK UI.
+    window.__nativeCalls = [];
+    const pending = {};
+    window.__resolveNative = (key, value) => pending[key](value);
+    const info = { canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' };
+    window.CapacitorCustomPlatform = { name: config.platform || 'ios' };
+    window.Capacitor = {
+      PluginHeaders: [
+        { name: 'AdMob', methods: ['requestConsentInfo', 'showConsentForm', 'showPrivacyOptionsForm', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial'].map(name => ({ name, rtype: 'promise' })) },
+        { name: 'NativePurchases', methods: ['addListener', 'getPurchases', 'getProducts'].map(name => ({ name, rtype: 'promise' })) },
+        { name: 'SplashScreen', methods: [{ name: 'hide', rtype: 'promise' }] }
+      ],
+      nativePromise: async (plugin, method) => {
+        if (plugin === 'NativePurchases') return { purchases: config.purchases || [], products: [] };
+        window.__nativeCalls.push(plugin + '.' + method);
+        if (method === 'hide') {
+          window.__launchFrame = { intro: !document.getElementById('studioIntro').hidden, canvas: document.getElementById('c').width };
+          return;
+        }
+        if (method === 'requestConsentInfo') {
+          if (config.offline) throw Error('offline');
+          return config.infoPending ? new Promise(r => { pending.info = r; }) : { ...info, ...config.info };
+        }
+        if (method === 'showConsentForm') return new Promise(r => { pending.form = r; });
+        if (method === 'showPrivacyOptionsForm') return new Promise(r => { pending.privacy = r; });
+      }
+    };
+    document.addEventListener('intro:done', () => window.__nativeCalls.push('intro:done'));
+  }, native);
   await page.goto(url + (shots ? '#shots' : ''));
   if (shots) await page.waitForFunction(() => window.__ts);
+  if (shots && !native) await page.waitForFunction(() => !document.querySelector('.hud').inert);
   return { page, context };
 }
 const storage = page => page.evaluate(() => ({ ...localStorage }));
@@ -48,13 +79,14 @@ async function lose(page) {
   if (await page.locator('#offer').isVisible()) await page.locator('#offerNo').click();
 }
 
-test('fresh launch: existing skippable intro enters tutorial underneath its fade; returning user reaches menu', async () => {
+test('fresh launch: skippable intro finishes before the interactive tutorial; returning user reaches menu', async () => {
   const { page, context } = await fixture({}, {}, false);
   await page.waitForSelector('#studioIntro:not([hidden])');
   await page.locator('#studioIntro').dispatchEvent('pointerdown');
-  assert.equal(await page.locator('#skipBtn').isVisible(), true);
-  assert.equal(await page.locator('#menu').isHidden(), true);
+  assert.equal(await page.locator('#skipBtn').isHidden(), true);
   await page.waitForSelector('#studioIntro[hidden]', { state: 'attached' });
+  await page.waitForSelector('#skipBtn:not([hidden])');
+  assert.equal(await page.locator('#menu').isHidden(), true);
   await page.locator('#skipBtn').click();
   assert.equal(await page.locator('#menu').isHidden(), true);
   assert.equal(await page.locator('#score').textContent(), '0');
@@ -83,13 +115,13 @@ test('first tutorial becomes one real Square run: normal tolerance, score, unloc
   assert.ok(JSON.parse(saved.ss_unlocked).includes('circle'));
   assert.equal(saved.ss_tut_done, '1');
   assert.equal(saved.ss_help_reveal, '"pending"');
-  assert.equal(await page.locator('#helpReveal').isHidden(), true, 'results unobstructed');
+  assert.equal(await page.locator('#helpReveal').count(), 0, 'results unobstructed');
   await page.locator('#menuBtn').click();
   assert.equal(await page.evaluate(() => localStorage.getItem('ss_help_reveal')), '"done"');
   await page.waitForFunction(() => document.getElementById('helpBtn').classList.contains('beckon'));
   await page.waitForFunction(() => !document.getElementById('helpBtn').classList.contains('beckon'));
   await page.reload();
-  assert.equal(await page.locator('#helpReveal').isHidden(), true);
+  assert.equal(await page.locator('#helpReveal').count(), 0);
   assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
   assert.equal(await page.locator('#helpTip').count(), 0);
   await context.close();
@@ -99,6 +131,7 @@ for (const mode of ['endless', 'time', 'daily']) test(`? starts the same Square 
   const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 6, ss_best_endless_square: 7, ss_modes_unlocked: ['time', 'daily'], ss_intro_daily: 1, ss_mode2: mode, ss_shape: 'octagon', ss_help_reveal: 'done' });
   const before = await storage(page);
   await page.locator('#helpBtn').click(); // real button; catches the previous ordinary-game regression
+  assert.equal(await page.locator('#skipBtn').textContent(), 'EXIT PRACTICE');
   assert.deepEqual(await page.evaluate(() => [__ts.practice, __ts.mode, __ts.runShape]), [true, 'endless', 'square']);
   await page.waitForFunction(() => __ts.coach === 'Tap anywhere to drop');
   await learn(page);
@@ -116,7 +149,7 @@ for (const mode of ['endless', 'time', 'daily']) test(`? starts the same Square 
   assert.deepEqual(await storage(page), before);
   assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), false);
   assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
-  assert.equal(await page.locator('#helpReveal').isHidden(), true);
+  assert.equal(await page.locator('#helpReveal').count(), 0);
   await context.close();
 });
 
@@ -124,6 +157,7 @@ for (const phase of ['slice', 'recovery', 'grown']) test(`first-time Skip during
   const { page, context } = await fixture();
   const before = await storage(page);
   await page.evaluate(() => __ts.tutorial(false));
+  assert.equal(await page.locator('#skipBtn').textContent(), 'SKIP TUTORIAL');
   const fullArea = await page.evaluate(() => __ts.topArea);
   if (phase === 'slice') {
     // Reach the unlock threshold without advancing the teaching sequence.
@@ -146,7 +180,7 @@ for (const phase of ['slice', 'recovery', 'grown']) test(`first-time Skip during
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   assert.equal(await page.locator('#tip span').textContent(), 'ENDLESS · SQUARE');
   assert.equal(await page.locator('#tip').evaluate(e => getComputedStyle(e).pointerEvents), 'none');
-  assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1' });
+  assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1', ss_help_reveal: '"armed"' });
   if (phase === 'slice') {
     // A real pointer tap works while the message is visible; 0.5 must slice at normal tolerance.
     await page.evaluate(() => __ts.setOff(0.5));
@@ -156,7 +190,7 @@ for (const phase of ['slice', 'recovery', 'grown']) test(`first-time Skip during
     assert.ok(await page.evaluate(() => __ts.topArea) < fullArea);
     await page.waitForTimeout(1000);
     assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), true);
-    await page.waitForFunction(() => !document.getElementById('tip').classList.contains('show'), null, { timeout: 1200 });
+    await page.waitForFunction(() => !document.getElementById('tip').classList.contains('show'), null, { timeout: 1800 });
     for (let i = 1; i < 21; i++) await drop(page, 0);
     await lose(page);
     const saved = await storage(page);
@@ -164,18 +198,18 @@ for (const phase of ['slice', 'recovery', 'grown']) test(`first-time Skip during
     assert.equal(saved.ss_games, '1', 'abandoned teaching misses/counts are excluded');
     assert.ok(JSON.parse(saved.ss_unlocked).includes('circle'), 'real-run progression works');
     await page.locator('#menuBtn').click();
-    assert.equal((await storage(page)).ss_help_reveal, undefined);
-    assert.equal(await page.locator('#helpReveal').isHidden(), true);
-    assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
+    assert.equal((await storage(page)).ss_help_reveal, '"done"');
+    assert.equal(await page.locator('#helpReveal').count(), 0);
+    await page.waitForFunction(() => !document.getElementById('helpBtn').classList.contains('beckon'));
   } else {
     const movingId = await page.evaluate(() => __ts.moving.mesh.uuid);
-    await page.waitForTimeout(2200); // pending recovery and growth-completion callbacks must be cancelled
+    await page.waitForTimeout(2600); // pending recovery and growth-completion callbacks must be cancelled
     assert.equal(await page.evaluate(() => __ts.moving.mesh.uuid), movingId);
     assert.equal(await page.evaluate(() => __ts.score), 0);
     assert.equal(await page.evaluate(() => __ts.tutorialPhase), null);
     assert.equal(await page.locator('#coach').isHidden(), true);
     assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), false);
-    assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1' });
+    assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1', ss_help_reveal: '"armed"' });
   }
   await context.close();
 });
@@ -196,9 +230,9 @@ test('successful first tutorial completion commits deferred teaching unlocks', a
 });
 
 test('reduced motion consumes the one-time reveal without movement or emphasis', async () => {
-  const { page, context } = await fixture({ ss_tut_done: 1, ss_help_reveal: 'pending' }, { reducedMotion: 'reduce' });
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 1, ss_help_reveal: 'pending' }, { reducedMotion: 'reduce' });
   assert.equal((await storage(page)).ss_help_reveal, '"done"');
-  assert.equal(await page.locator('#helpReveal').isHidden(), true);
+  assert.equal(await page.locator('#helpReveal').count(), 0);
   assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
   await page.locator('#helpBtn').click();
   await learn(page);
@@ -254,4 +288,160 @@ test('small-screen footer links have 44px targets, open separately, and never st
   assert.equal(await page.evaluate(() => __ts.state), 'menu');
   assert.equal(await page.locator('#helpTip').count(), 0);
   await context.close();
+});
+
+for (const initial of ['slice', 'perfect']) test(`miss during ${initial} preserves the objective and resets the consecutive streak`, async () => {
+  const { page, context } = await fixture();
+  await page.evaluate(() => __ts.tutorial(false));
+  if (initial === 'perfect') { await drop(page, 0.8); await drop(page, 0); await drop(page, 0); }
+  await drop(page, 6.9);
+  await page.waitForFunction(() => __ts.coach === 'Missed the tower!');
+  assert.equal(await page.locator('#coach span').textContent(), 'In a normal run, that ends the game. Try again!');
+  assert.equal(await page.locator('#coach .dots').count(), 0);
+  assert.equal(await page.evaluate(() => __ts.tutorialPhase), initial);
+  assert.equal((await storage(page)).ss_games, undefined);
+  await page.waitForFunction(() => __ts.state === 'playing');
+  if (initial === 'slice') await drop(page, 0.8);
+  else {
+    assert.equal(await page.locator('#coach .pips3 i.on').count(), 0);
+    await drop(page, 0); // 1; previous two Perfects must not complete this challenge
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), 'perfect');
+    await drop(page, 1.5); // slice also resets the streak
+  }
+  for (let i = 0; i < 2; i++) await drop(page, 0);
+  assert.equal(await page.evaluate(() => __ts.tutorialPhase), 'perfect');
+  await drop(page, 0);
+  assert.equal(await page.evaluate(() => __ts.tutorialPhase), 'grown');
+  await page.waitForFunction(() => __ts.tutorialPhase === null);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  await context.close();
+});
+
+for (const entry of ['complete', 'skip']) test(`${entry}: fresh progression unlocks Circle exactly at 20, preserves its celebration, offers Circle and reveals help once`, async () => {
+  const { page, context } = await fixture();
+  const circle = page.locator('[data-page="endless"] [data-shape="circle"][data-copy="1"]');
+  assert.equal(await circle.evaluate(e => e.classList.contains('locked')), true);
+  assert.equal(await page.locator('[data-page="endless"] [data-best-sub]').textContent(), 'Score 20 to unlock Circle');
+  assert.equal((await storage(page)).ss_allshapes, undefined);
+  await page.evaluate(() => __ts.tutorial(false));
+  if (entry === 'complete') await learn(page);
+  else await page.locator('#skipBtn').click();
+  assert.equal((await storage(page)).ss_help_reveal, '"armed"');
+  assert.equal(await page.locator('#helpBtn').isHidden(), true);
+  while (await page.evaluate(() => __ts.score) < 19) await drop(page, 0);
+  assert.equal((await storage(page)).ss_unlocked, undefined);
+  await drop(page, 0);
+  assert.deepEqual(JSON.parse((await storage(page)).ss_unlocked), ['square', 'circle']);
+  assert.equal(await page.locator('#popup').textContent(), 'Circle unlocked!');
+  await drop(page, 0);
+  assert.equal(await page.locator('#popup').textContent(), 'Circle unlocked!', 'the next Perfect does not replace the unlock celebration');
+  await lose(page);
+  assert.equal(await page.locator('#tryNewBtn').textContent(), 'Play circle');
+  assert.equal(await page.locator('#tryNewBtn').isVisible(), true);
+  assert.equal(await page.locator('#unlockNote').textContent(), 'Daily challenge unlocked · Time Attack unlocked');
+  assert.equal((await storage(page)).ss_help_reveal, '"pending"');
+  await page.locator('#menuBtn').click();
+  assert.equal(await circle.evaluate(e => e.classList.contains('locked')), false);
+  assert.equal(await page.locator('#helpBtn.beckon').count(), 1);
+  assert.equal((await storage(page)).ss_help_reveal, '"done"');
+  await page.reload();
+  await page.waitForFunction(() => window.__ts && !document.querySelector('.hud').inert);
+  assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
+  await page.locator('#helpBtn').click();
+  await page.locator('#skipBtn').click();
+  assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
+  await context.close();
+});
+
+test('Unlock All Shapes entitlement grants access without writing earned progression; Remove Ads alone does not unlock shapes', async () => {
+  for (const all of [false, true]) {
+    const { page, context } = await fixture({ ss_tut_done: 1, ss_noads: 1, ss_allshapes: all ? 1 : 0 });
+    const shapes = page.locator('[data-page="endless"] [data-copy="1"]');
+    assert.equal(await shapes.count(), 9);
+    assert.equal(await shapes.evaluateAll(els => els.filter(e => e.classList.contains('locked')).length), all ? 0 : 8);
+    const before = await storage(page);
+    await page.locator('#helpBtn').click();
+    await learn(page);
+    for (let i = 4; i < 21; i++) await drop(page, 0);
+    await lose(page);
+    await page.locator('#menuBtn').click();
+    assert.deepEqual(await storage(page), before);
+    await context.close();
+  }
+});
+
+for (const launch of ['first', 'returning']) test(`mock native ${launch} launch awaits info, form and UMP-owned ATT before accepting play`, async () => {
+  const { page, context } = await fixture(launch === 'returning' ? { ss_tut_done: 1, ss_games: 5 } : {}, {}, launch !== 'first', { infoPending: true });
+  if (launch === 'first') {
+    await page.waitForSelector('#studioIntro:not([hidden])');
+    assert.ok(!(await page.evaluate(() => __nativeCalls)).includes('AdMob.requestConsentInfo'));
+    await page.locator('#studioIntro').dispatchEvent('pointerdown');
+  }
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
+  assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
+  await page.mouse.click(180, 320);
+  assert.equal(await page.locator('#skipBtn').isHidden(), true);
+  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
+  await page.waitForTimeout(300); // controlled native explainer + undetermined ATT remains open
+  assert.equal(await page.locator('#score').textContent(), '0');
+  assert.equal(await page.locator('#skipBtn').isHidden(), true);
+  await page.evaluate(() => __resolveNative('form', { canRequestAds: false })); // ATT/consent refusal completes flow
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  if (launch === 'first') {
+    assert.equal(await page.locator('#skipBtn').isVisible(), true);
+    await page.locator('#skipBtn').click();
+    assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
+  } else await page.locator('[data-page="endless"] [data-play]').click();
+  const calls = await page.evaluate(() => __nativeCalls);
+  const frame = await page.evaluate(() => __launchFrame);
+  assert.equal(frame.intro, launch === 'first');
+  assert.ok(frame.canvas > 0, 'canvas is sized before releasing the native screen');
+  assert.deepEqual(calls, launch === 'first'
+    ? ['SplashScreen.hide', 'intro:done', 'AdMob.requestConsentInfo', 'AdMob.showConsentForm']
+    : ['SplashScreen.hide', 'AdMob.requestConsentInfo', 'AdMob.showConsentForm']);
+  await page.waitForTimeout(400);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), calls, 'no late form or second app ATT path');
+  await context.close();
+});
+
+for (const offline of [false, true]) test(`mock native returning launch: ${offline ? 'offline' : 'ATT already determined / no form'} permits prompt play`, async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1 }, {}, true, { offline, info: { isConsentFormAvailable: false, canRequestAds: false } });
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  await page.locator('[data-page="endless"] [data-play]').click();
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'AdMob.requestConsentInfo']);
+  await context.close();
+});
+
+test('mock native privacy form freezes movement and Time Attack countdown until dismissal', async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_modes_unlocked: ['time'] }, {}, true, { info: { isConsentFormAvailable: false, canRequestAds: false, privacyOptionsRequirementStatus: 'REQUIRED' } });
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  await page.evaluate(() => __ts.start('time', 'square'));
+  await page.evaluate(() => { window.__privacyDone = Ads.showPrivacyOptions(); });
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showPrivacyOptionsForm'));
+  const before = await page.evaluate(() => ({ off: __ts.moving.off, time: __ts.remainingTime }));
+  await page.waitForTimeout(350);
+  assert.deepEqual(await page.evaluate(() => ({ off: __ts.moving.off, time: __ts.remainingTime })), before);
+  await page.mouse.click(180, 320);
+  assert.equal(await page.evaluate(() => __ts.score), 0);
+  await page.evaluate(() => __resolveNative('privacy'));
+  await page.evaluate(() => __privacyDone);
+  await page.waitForTimeout(150);
+  assert.ok(await page.evaluate(() => __ts.remainingTime) < before.time);
+  await context.close();
+});
+
+for (const platform of ['ios', 'android']) test(`mock ${platform} store entitlement grants every shape and ignores revoked purchases`, async () => {
+  for (const revoked of [false, true]) {
+    const { page, context } = await fixture({ ss_tut_done: 1 }, {}, true, {
+      platform, info: { isConsentFormAvailable: false },
+      purchases: [{ productIdentifier: 'shapescraper_unlock_all', purchaseState: 1, revocationDate: revoked ? '2026-11-01' : null }]
+    });
+    await page.waitForFunction(() => !document.querySelector('.hud').inert);
+    assert.equal(await page.evaluate(() => Store.allShapes()), !revoked);
+    assert.equal(await page.locator('[data-page="endless"] [data-copy="1"].locked').count(), revoked ? 8 : 0);
+    assert.equal((await storage(page)).ss_unlocked, undefined);
+    await context.close();
+  }
 });
