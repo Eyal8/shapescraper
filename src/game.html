@@ -725,38 +725,67 @@ window.Ads = (function () {
   let lastRewarded = 0; // a player who just watched a rewarded ad doesn't get a forced one next
   let privacyRequired = false; // UMP says players must be able to reopen ad privacy choices
 
+  let canRequestAds = false; // latest SDK result, never persisted as custom consent
+  let initialized = false;
+  let privacyBusy = false;
+  let consentGeneration = 0;
+  const loading = { interstitial: null, rewarded: null };
+
+  function updatePrivacy(info) {
+    privacyRequired = info.privacyOptionsRequirementStatus === 'REQUIRED';
+    document.dispatchEvent(new Event('ads:privacy'));
+  }
+
+  async function startAds(info) {
+    updatePrivacy(info);
+    canRequestAds = info.canRequestAds === true;
+    if (!canRequestAds) return;
+    if (!initialized) {
+      await AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' });
+      initialized = true;
+    }
+    preload('rewarded');
+    if (!adFree()) preload('interstitial');
+  }
+
   async function init() {
-    if (!AdMob) return;
+    if (!AdMob || privacyBusy) return;
+    privacyBusy = true;
     try {
-      await AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' }); // BENO74 standard section 3
-      try {
-        let info = await AdMob.requestConsentInfo();
-        if (info.isConsentFormAvailable && info.status === 'REQUIRED') info = await AdMob.showConsentForm();
-        privacyRequired = info && info.privacyOptionsRequirementStatus === 'REQUIRED';
-        document.dispatchEvent(new Event('ads:privacy'));
-      } catch (e) {}
-      if (platform === 'ios') {
-        try {
-          const t = await AdMob.trackingAuthorizationStatus();
-          if (t.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
-        } catch (e) {}
-      }
-      preload('rewarded');
-      if (!adFree()) preload('interstitial');
-    } catch (e) { console.warn('AdMob init failed', e); }
+      let info = await AdMob.requestConsentInfo(); // refresh on every cold launch
+      updatePrivacy(info); // keep the entry point even if presenting the form fails
+      // Let UMP decide which forms are required, including the iOS IDFA explainer/ATT.
+      if (info.isConsentFormAvailable) info = await AdMob.showConsentForm();
+      await startAds(info);
+    } catch (e) {
+      // The wrapper rejects without exposing cached SDK eligibility. Fail closed this launch.
+      canRequestAds = false;
+      console.warn('Ad consent unavailable; gameplay remains available', e);
+    } finally {
+      privacyBusy = false;
+    }
   }
 
   async function preload(kind) {
-    if (!AdMob || ready[kind]) return;
-    try {
-      const opts = { adId: ids[kind], isTesting: CONFIG.testing };
-      if (kind === 'rewarded') await AdMob.prepareRewardVideoAd(opts);
-      else await AdMob.prepareInterstitial(opts);
-      ready[kind] = true;
-    } catch (e) {
-      ready[kind] = false;
-      setTimeout(() => preload(kind), 30000);
-    }
+    if (!AdMob || !initialized || !canRequestAds || ready[kind]) return;
+    if (loading[kind]) return loading[kind];
+    const generation = consentGeneration;
+    loading[kind] = (async () => {
+      try {
+        const opts = { adId: ids[kind], isTesting: CONFIG.testing };
+        if (kind === 'rewarded') await AdMob.prepareRewardVideoAd(opts);
+        else await AdMob.prepareInterstitial(opts);
+        if (generation === consentGeneration && canRequestAds) ready[kind] = true;
+      } catch (e) {
+        if (generation === consentGeneration && canRequestAds) {
+          ready[kind] = false;
+          setTimeout(() => preload(kind), 30000);
+        }
+      } finally {
+        loading[kind] = null;
+      }
+    })();
+    return loading[kind];
   }
 
   // Waits for one of the given plugin events (or a timeout), then cleans up listeners.
@@ -804,7 +833,8 @@ window.Ads = (function () {
   async function showRewarded(opts) {
     if (adFree() && opts && opts.free) return true;
     if (!AdMob) { const ok = await simulate(5); if (ok) lastRewarded = Date.now(); return ok; }
-    if (!ready.rewarded) { await preload('rewarded'); if (!ready.rewarded) return false; }
+    if (!canRequestAds || !initialized) return false;
+    if (!ready.rewarded) { await preload('rewarded'); if (!ready.rewarded || !canRequestAds) return false; }
     ready.rewarded = false;
     let earned = false;
     const done = waitFor(
@@ -828,6 +858,7 @@ window.Ads = (function () {
     if (!due || !spaced) return;
     lastInterstitial = Date.now();
     if (!AdMob) { await simulate(3); return; }
+    if (!canRequestAds || !initialized) return;
     if (!ready.interstitial) { preload('interstitial'); return; }
     ready.interstitial = false;
     const done = waitFor({ interstitialAdDismissed: true, interstitialAdFailedToShow: true }, null, 120000);
@@ -840,8 +871,23 @@ window.Ads = (function () {
   if (window.__introPending) document.addEventListener('intro:done', init, { once: true });
   else init();
   async function showPrivacyOptions() {
-    if (!AdMob) return;
-    try { await AdMob.showPrivacyOptionsForm(); } catch (e) {}
+    if (!AdMob || privacyBusy || !privacyRequired) return;
+    privacyBusy = true;
+    canRequestAds = false;
+    consentGeneration++;
+    ready.rewarded = ready.interstitial = false;
+    try {
+      await AdMob.showPrivacyOptionsForm();
+      // Wait out old loads before requesting replacements with the new choices.
+      await Promise.all([loading.rewarded, loading.interstitial]);
+      // showPrivacyOptionsForm returns void in 8.2.1; ask the SDK for updated eligibility.
+      await startAds(await AdMob.requestConsentInfo());
+    } catch (e) {
+      canRequestAds = false;
+      console.warn('Ad privacy choices unavailable', e);
+    } finally {
+      privacyBusy = false;
+    }
   }
 
   return {
