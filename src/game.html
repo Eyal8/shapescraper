@@ -1414,6 +1414,9 @@ window.Ads = (function () {
   function tipOnce(key, title, line) {
     if (store.get(key, 0) || (store.get('ss_games', 0) || 0) >= 3) return;
     store.set(key, 1);
+    showTip(title, line, 3200);
+  }
+  function showTip(title, line, ms) {
     const el = $('tip');
     el.innerHTML = '';
     const b = document.createElement('b'); b.textContent = title;
@@ -1421,7 +1424,7 @@ window.Ads = (function () {
     el.append(b, sp);
     el.classList.add('show');
     clearTimeout(tipTimer);
-    tipTimer = setTimeout(hideTip, 3200);
+    tipTimer = setTimeout(hideTip, ms);
   }
 
   function place() {
@@ -1449,7 +1452,7 @@ window.Ads = (function () {
       if (mode === 'time') timeLeft += TIME_BONUS;
       showPopup(label, 0, extra);
       addRing(placed, y);
-      if (maxed) { setTimeout(() => addRing(placed, y), 120); setTimeout(() => tone(1568, 0.25, 'sine', 0.1), 90); }
+      if (maxed) { lessonTimeout(() => addRing(placed, y), 120); lessonTimeout(() => tone(1568, 0.25, 'sine', 0.1), 90); }
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
       buzz(10, mode === 'daily' && !tut ? 'pip' : 'perfect');
     } else {
@@ -1486,9 +1489,9 @@ window.Ads = (function () {
     score = stack.length - 1;
     scoreEl.textContent = mode === 'daily' ? perfects : score;
     scoreEl.classList.add('bump');
-    setTimeout(() => scoreEl.classList.remove('bump'), 120);
+    lessonTimeout(() => scoreEl.classList.remove('bump'), 120);
     setBg(lvl);
-    if (tut) { checkUnlock(); spawnMoving(); tutAfterDrop(grewFrom ? 'grow' : Math.abs(m.off) < tut.tol ? 'perfect' : 'slice'); return; }
+    if (tut) { spawnMoving(); tutAfterDrop(grewFrom ? 'grow' : Math.abs(m.off) < tut.tol ? 'perfect' : 'slice'); return; }
     if (checkDailyGoal()) return;
     const before = newlyUnlocked;
     checkUnlock();
@@ -1581,10 +1584,10 @@ window.Ads = (function () {
   }
 
   // ---------- unlocks ----------
-  function checkUnlock() {
+  function checkUnlock(catchUp = false) {
     if ((tutorialRun && tutorialRun.practice) || trialRun || (mode !== 'endless' && mode !== 'time')) return;
     const next = SHAPES[SHAPES.indexOf(runShape) + 1];
-    if (!next || score !== UNLOCK[mode][next]) return;
+    if (!next || (catchUp ? score < UNLOCK[mode][next] : score !== UNLOCK[mode][next])) return;
     if (!isUnlocked(next)) {
       unlock(next); newlyUnlocked = next;
       // a proper moment: banner with the new shape, confetti, a little fanfare, a success tap
@@ -2335,7 +2338,7 @@ window.Ads = (function () {
       delay += 0.08;
     }
     const lvl = stack.length - 1, mp = topLayer().mp;
-    setTimeout(() => addRing(mp, lvl * H), delay * 1000 + 250);
+    lessonTimeout(() => addRing(mp, lvl * H), delay * 1000 + 250);
     if (!quiet) {
       setTimeout(() => showPopup('Tower rebuilt!', 1300), delay * 1000);
       [523, 659, 784, 1047].forEach((f, k) => setTimeout(() => tone(f, 0.18, 'sine', 0.13), k * 80));
@@ -2396,6 +2399,13 @@ window.Ads = (function () {
   // ---------- tutorial: coach a Square run, then hand the same tower back to the player ----------
   // Early misses recover without recording a loss. Skip is always available during teaching.
   const TUT_STEPS = 4;
+  // Cancel delayed teaching/recovery effects when Skip replaces the tower.
+  function lessonTimeout(fn, ms) {
+    const lesson = tut;
+    const timer = setTimeout(() => { if (!lesson || tut === lesson) fn(); }, ms);
+    if (lesson) lesson.timers.push(timer);
+    return timer;
+  }
   let coachTimer = 0;
   function coach(pos, title, line, step, pips) {
     const c = $('coach');
@@ -2423,7 +2433,7 @@ window.Ads = (function () {
     const previous = tutorialRun;
     tutorialRun = { practice, prevMode: previous ? previous.prevMode : mode, prevShape: previous ? previous.prevShape : shape, prevDate: previous ? previous.prevDate : runDate };
     { const cur = spin ? spin.to : world.rotation.y; world.rotation.y = Math.round(cur / (Math.PI * 2)) * Math.PI * 2; spin = null; }
-    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, lock: false };
+    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, lock: false, timers: [] };
     trialRun = false;
     mode = 'endless'; shape = 'square'; runDate = null;
     reset();
@@ -2456,7 +2466,7 @@ window.Ads = (function () {
         if (kind === 'grow' || t.streak >= 3) {
           t.phase = 'grown'; t.lock = true;
           coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3, 3);
-          setTimeout(() => { if (tut === t) completeLesson(); }, 2000);
+          lessonTimeout(completeLesson, 2000);
           return;
         }
         coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', 3, t.streak);
@@ -2471,6 +2481,7 @@ window.Ads = (function () {
     if (!tutorialRun.practice) {
       store.set('ss_tut_done', 1);
       if (!store.get('ss_help_reveal', '')) store.set('ss_help_reveal', 'pending');
+      checkUnlock(true); // Commit any unlock earned during the now-completed lesson.
     }
     coach('low', "You're ready! Keep stacking!", 'Miss the tower and the run ends', 4);
     const session = tutorialRun;
@@ -2490,8 +2501,7 @@ window.Ads = (function () {
     buzz([30, 40, 60], 'over');
     t.lock = true; t.streak = 0; combo = 0;
     coach('low', 'Missed! Try another block', 'Skip any time to return to the menu', 4);
-    setTimeout(() => {
-      if (tut !== t) return;
+    lessonTimeout(() => {
       boostAfterContinue(true);
       state = 'playing'; spawnMoving();
       t.lock = false; tutCard();
@@ -2500,9 +2510,17 @@ window.Ads = (function () {
 
   function skipTutorial() {
     if (!tut) return;
-    if (!tutorialRun.practice) store.set('ss_tut_done', 1);
-    // Abandon this run without a loss, score save, or completion reveal.
-    showMenu();
+    if (tutorialRun.practice) { showMenu(); return; }
+    tut.timers.forEach(clearTimeout);
+    tut = null;
+    hideCoach(); $('coach').hidden = true; $('skipBtn').hidden = true;
+    scoreEl.classList.remove('bump');
+    clearTimeout(popupTimer); popupEl.classList.remove('show', 'gold');
+    store.set('ss_tut_done', 1);
+    // Discard the instructional tower and start an ordinary, score-zero run.
+    mode = 'endless'; shape = 'square'; runDate = null; trialRun = false;
+    start();
+    showTip("You're playing for real!", 'ENDLESS · SQUARE', 1500);
   }
 
   let helpAnimation = null;

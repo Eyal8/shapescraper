@@ -56,6 +56,9 @@ test('fresh launch: existing skippable intro enters tutorial underneath its fade
   assert.equal(await page.locator('#menu').isHidden(), true);
   await page.waitForSelector('#studioIntro[hidden]', { state: 'attached' });
   await page.locator('#skipBtn').click();
+  assert.equal(await page.locator('#menu').isHidden(), true);
+  assert.equal(await page.locator('#score').textContent(), '0');
+  assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   await page.reload();
   assert.equal(await page.locator('#studioIntro').isHidden(), true);
   assert.equal(await page.locator('#menu').isVisible(), true);
@@ -111,32 +114,84 @@ for (const mode of ['endless', 'time', 'daily']) test(`? starts the same Square 
   await page.locator('#skipBtn').click();
   assert.deepEqual(await page.evaluate(() => [__ts.mode, __ts.shape, __ts.state]), [mode, 'octagon', 'menu']);
   assert.deepEqual(await storage(page), before);
+  assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), false);
   assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
   assert.equal(await page.locator('#helpReveal').isHidden(), true);
   await context.close();
 });
 
-test('early misses recover, Skip cancels pending recovery and completion timers without scores or game counts', async () => {
+for (const phase of ['slice', 'recovery', 'grown']) test(`first-time Skip during ${phase} discards teaching progress and immediately starts a fresh real run`, async () => {
   const { page, context } = await fixture();
+  const before = await storage(page);
   await page.evaluate(() => __ts.tutorial(false));
-  await drop(page, 6.9);
-  await page.waitForFunction(() => __ts.state === 'playing');
-  assert.equal(await page.evaluate(() => __ts.score), 0);
-  assert.equal((await storage(page)).ss_games, undefined);
-  await drop(page, 6.9);
+  const fullArea = await page.evaluate(() => __ts.topArea);
+  if (phase === 'slice') {
+    // Reach the unlock threshold without advancing the teaching sequence.
+    for (let i = 0; i < 22; i++) await drop(page, 0);
+  } else {
+    await drop(page, 0.8);
+    if (phase === 'recovery') await drop(page, 6.9);
+    else for (let i = 0; i < 3; i++) await drop(page, 0);
+  }
+  assert.deepEqual(await storage(page), before, 'no tutorial score, miss or unlock persisted');
   await page.locator('#skipBtn').click();
-  await page.waitForTimeout(1400);
-  assert.equal(await page.evaluate(() => __ts.state), 'menu');
-  assert.equal((await storage(page)).ss_best_endless_square, undefined);
-  assert.equal((await storage(page)).ss_games, undefined);
-  assert.equal((await storage(page)).ss_help_reveal, undefined);
-  await page.locator('#helpBtn').click();
-  await drop(page, 0.8);
-  for (let i = 0; i < 3; i++) await drop(page, 0);
-  await page.locator('#skipBtn').click();
-  await page.waitForTimeout(2200);
-  assert.equal(await page.evaluate(() => __ts.state), 'menu');
+  assert.deepEqual(await page.evaluate(() => [__ts.state, __ts.mode, __ts.runShape, __ts.tutorialPhase, __ts.practice, __ts.score, __ts.perfects, __ts.speed]),
+    ['playing', 'endless', 'square', null, false, 0, 0, 4]);
+  assert.equal(await page.evaluate(() => __ts.topArea), fullArea);
+  assert.equal(await page.evaluate(() => __ts.moving.lvl), 1);
   assert.equal(await page.locator('#coach').isHidden(), true);
+  assert.equal(await page.locator('#popup').evaluate(e => e.classList.contains('show')), false);
+  assert.equal(await page.locator('#skipBtn').isHidden(), true);
+  assert.equal(await page.locator('#menu').isHidden(), true);
+  assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
+  assert.equal(await page.locator('#tip span').textContent(), 'ENDLESS · SQUARE');
+  assert.equal(await page.locator('#tip').evaluate(e => getComputedStyle(e).pointerEvents), 'none');
+  assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1' });
+  if (phase === 'slice') {
+    // A real pointer tap works while the message is visible; 0.5 must slice at normal tolerance.
+    await page.evaluate(() => __ts.setOff(0.5));
+    await page.mouse.click(180, 320);
+    assert.equal(await page.evaluate(() => __ts.score), 1);
+    assert.equal(await page.evaluate(() => __ts.perfects), 0);
+    assert.ok(await page.evaluate(() => __ts.topArea) < fullArea);
+    await page.waitForTimeout(1000);
+    assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), true);
+    await page.waitForFunction(() => !document.getElementById('tip').classList.contains('show'), null, { timeout: 1200 });
+    for (let i = 1; i < 21; i++) await drop(page, 0);
+    await lose(page);
+    const saved = await storage(page);
+    assert.equal(saved.ss_best_endless_square, '21', 'only the fresh real run score is saved');
+    assert.equal(saved.ss_games, '1', 'abandoned teaching misses/counts are excluded');
+    assert.ok(JSON.parse(saved.ss_unlocked).includes('circle'), 'real-run progression works');
+    await page.locator('#menuBtn').click();
+    assert.equal((await storage(page)).ss_help_reveal, undefined);
+    assert.equal(await page.locator('#helpReveal').isHidden(), true);
+    assert.equal(await page.locator('#helpBtn.beckon').count(), 0);
+  } else {
+    const movingId = await page.evaluate(() => __ts.moving.mesh.uuid);
+    await page.waitForTimeout(2200); // pending recovery and growth-completion callbacks must be cancelled
+    assert.equal(await page.evaluate(() => __ts.moving.mesh.uuid), movingId);
+    assert.equal(await page.evaluate(() => __ts.score), 0);
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), null);
+    assert.equal(await page.locator('#coach').isHidden(), true);
+    assert.equal(await page.locator('#tip').evaluate(e => e.classList.contains('show')), false);
+    assert.deepEqual(await storage(page), { ...before, ss_tut_done: '1' });
+  }
+  await context.close();
+});
+
+test('successful first tutorial completion commits deferred teaching unlocks', async () => {
+  const { page, context } = await fixture();
+  const before = await storage(page);
+  await page.evaluate(() => __ts.tutorial(false));
+  for (let i = 0; i < 22; i++) await drop(page, 0);
+  assert.deepEqual(await storage(page), before);
+  await learn(page);
+  assert.ok(JSON.parse((await storage(page)).ss_unlocked).includes('circle'));
+  await lose(page);
+  assert.equal((await storage(page)).ss_best_endless_square, '26');
+  assert.equal((await storage(page)).ss_games, '1');
+  assert.equal((await storage(page)).ss_help_reveal, '"pending"');
   await context.close();
 });
 
