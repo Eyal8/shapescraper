@@ -134,7 +134,11 @@ button { font: inherit; color: inherit; }
 #studioIntro img { width: min(62vw, 300px); height: auto; opacity: 0; transform: scale(0.86); animation: introIn 0.7s cubic-bezier(0.2, 1.2, 0.4, 1) 0.1s forwards; }
 #studioIntro.out { opacity: 0; }
 @keyframes introIn { to { opacity: 1; transform: none; } }
-.credit { margin-top: 10px; text-align: center; font: 500 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.5; }
+.menu-footer { pointer-events: auto; text-align: center; margin-top: 0; }
+.menu-footer a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 0 10px; color: rgba(255,255,255,0.9); text-decoration: none; text-shadow: 0 1px 3px rgba(10,12,24,0.8), 0 0 9px rgba(10,12,24,0.45); }
+.menu-footer a:focus-visible { outline: 2px solid white; outline-offset: -2px; border-radius: 8px; }
+.credit { font: 500 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
+.footer-links { margin-top: 0; font: 500 10px var(--mono); }
 @keyframes pop {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
   12% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
@@ -260,15 +264,9 @@ button { font: inherit; color: inherit; }
   left: max(16px, env(safe-area-inset-left, 0px));
 }
 #helpBtn { font: 800 20px var(--display); }
-#helpBtn.beckon { animation: beckon 0.9s ease-in-out 4; }
-@keyframes beckon { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 209, 102, 0.0); } 50% { transform: scale(1.18); box-shadow: 0 0 0 10px rgba(255, 209, 102, 0.35); } }
-#helpTip {
-  position: fixed; z-index: 15; top: calc(env(safe-area-inset-top, 0px) + 24px); left: calc(max(16px, env(safe-area-inset-left, 0px)) + 56px);
-  padding: 7px 12px; border-radius: 999px; background: var(--card-strong); border: 1px solid var(--card-line);
-  font: 500 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
-  animation: tipIn 3.2s ease forwards; pointer-events: none;
-}
-@keyframes tipIn { 0% { opacity: 0; transform: translateX(-8px); } 10%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+#helpBtn.beckon { animation: beckon 1.2s ease-in-out 1; }
+@keyframes beckon { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,209,102,0); } 45% { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(255,209,102,0.25); } }
+#helpReveal { position: fixed; left: 50%; top: 30%; z-index: 16; pointer-events: none; padding: 14px 20px; border-radius: 22px; background: var(--card-strong); font: 800 16px var(--display); transform: translate(-50%, -50%); }
 .skip {
   pointer-events: auto; height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer;
   background: var(--card); border: 1px solid var(--card-line); color: var(--ink);
@@ -293,10 +291,7 @@ button { font: inherit; color: inherit; }
 #coach .pips3 i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.7); box-sizing: border-box; }
 #coach .pips3 i.on { background: var(--gold); border-color: var(--gold); }
 #coach:not(:has(span:not(:empty))) b { margin-bottom: 0; }
-#tutEnd { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.25); }
-#tutEnd .card { transition: transform 0.65s cubic-bezier(.6,0,.3,1), opacity 0.65s ease; animation: cardIn 0.45s cubic-bezier(.2,1.3,.4,1); }
 @keyframes cardIn { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
-#tutEnd .card { width: min(300px, 100%); padding: 22px 18px 18px; gap: 16px; }
 #intro { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.35); }
 #intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; animation: cardIn 0.45s cubic-bezier(.2,1.3,.4,1); }
 #introBody { display: flex; flex-direction: column; gap: 10px; text-align: center; }
@@ -412,13 +407,20 @@ button { font: inherit; color: inherit; }
 .cal-detail span { display: block; text-wrap: balance; }
 p, .info, .label, .celebrate-title { text-wrap: balance; }
 @media (max-height: 720px) { .panel h1 { font-size: 30px; } .card { gap: 9px; padding: 12px; } .tagline { display: none; } }
-@media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check, .stamp { animation: none; } }
+.hud.menu-open #popup { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px); width: calc(100% - 32px); margin-top: 0; z-index: 16; }
+@media (max-height: 720px) { #menu { gap: 6px; } }
+@media (max-height: 640px) {
+  #menu .page-main, #menu .page-lock { min-height: 142px; }
+  #menu .page, #menu .page-main { gap: 8px; }
+  #menu .page .play { min-height: 52px; }
+}
+@media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check, .stamp, #helpBtn.beckon, #studioIntro img { animation: none; } #studioIntro img { opacity: 1; transform: none; } #coach, #studioIntro { transition: none; } }
 </style>
 
 <canvas id="c" aria-label="Shapescraper game"></canvas>
 <canvas id="fx" aria-hidden="true"></canvas>
 <div id="grainFx" hidden aria-hidden="true"></div>
-<div class="hud">
+<div class="hud menu-open">
   <div id="score" hidden>0</div>
   <div id="bestTag" hidden></div>
   <div id="sub" hidden></div>
@@ -485,7 +487,10 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <button type="button" class="link-btn" id="restoreBtn">Restore purchases</button>
       <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
     </div>
-    <div class="credit">by BENO74 Studios</div>
+    <footer class="menu-footer" aria-label="Studio and privacy">
+      <a class="credit" href="https://beno74.com" target="_blank" rel="noopener noreferrer">by BENO74 Studios</a>
+      <div class="footer-links"><a href="https://beno74.com/privacy/shapescraper" target="_blank" rel="noopener noreferrer">Privacy Policy</a><span aria-hidden="true">·</span><a href="https://beno74.com" target="_blank" rel="noopener noreferrer">Website</a></div>
+    </footer>
   </div>
 
   <div class="panel" id="offer" hidden>
@@ -576,10 +581,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 
 <div id="corner"><button id="helpBtn" class="tog" type="button" aria-label="How to play" hidden>?</button><button id="skipBtn" class="skip" type="button" hidden>Skip</button></div>
 <div id="coach" hidden aria-live="polite"><div class="dots"></div><b></b><span></span></div>
-<div id="tutEnd" hidden><div class="card">
-  <div class="celebrate-title" id="tutEndTitle">You're ready!</div>
-  <button type="button" class="btn primary" id="tutGo">Let's play</button>
-</div></div>
+<div id="helpReveal" hidden aria-hidden="true">You're ready!</div>
 <div id="intro" hidden role="dialog" aria-modal="true"><div class="card">
   <div class="celebrate-title" id="introTitle"></div>
   <div id="introBody"></div>
@@ -918,9 +920,14 @@ window.Ads = (function () {
   const PC = window.polygonClipping;
 
   const $ = (id) => document.getElementById(id);
+  // Survives the end of coaching, including practice free play and its results.
+  let tutorialRun = null;
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    set(k, v) {
+      if (tutorialRun && tutorialRun.practice && k !== 'ts_muted' && k !== 'ss_haptics') return;
+      try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+    }
   };
 
   // ---------- shapes, modes, progress ----------
@@ -1390,7 +1397,7 @@ window.Ads = (function () {
     updateSub();
   }
 
-  const speed = () => tut ? (tut.auto && !tut.demo ? 6 : 3.2) : Math.min(4 + score * 0.14, 11.5);
+  const speed = () => tut ? 3.2 : Math.min(4 + score * 0.14, 11.5);
 
   function addDebris(mp, y, color, axis, sign) {
     if (!mp.length) return;
@@ -1481,7 +1488,7 @@ window.Ads = (function () {
     scoreEl.classList.add('bump');
     setTimeout(() => scoreEl.classList.remove('bump'), 120);
     setBg(lvl);
-    if (tut) { spawnMoving(); tutAfterDrop(grewFrom ? 'grow' : Math.abs(m.off) < tut.tol ? 'perfect' : 'slice'); return; }
+    if (tut) { checkUnlock(); spawnMoving(); tutAfterDrop(grewFrom ? 'grow' : Math.abs(m.off) < tut.tol ? 'perfect' : 'slice'); return; }
     if (checkDailyGoal()) return;
     const before = newlyUnlocked;
     checkUnlock();
@@ -1513,7 +1520,7 @@ window.Ads = (function () {
     el.hidden = state !== 'playing' || runBest <= 0 || !!tut;
   }
   function checkBest(unlockedNow) {
-    if (tut || trialRun || mode === 'daily' || bestBeaten || runBest < 5 || score <= runBest) return;
+    if (tut || (tutorialRun && tutorialRun.practice) || trialRun || mode === 'daily' || bestBeaten || runBest < 5 || score <= runBest) return;
     bestBeaten = true;
     renderBest();
     if (!unlockedNow) {
@@ -1575,7 +1582,7 @@ window.Ads = (function () {
 
   // ---------- unlocks ----------
   function checkUnlock() {
-    if (trialRun || (mode !== 'endless' && mode !== 'time')) return;
+    if ((tutorialRun && tutorialRun.practice) || trialRun || (mode !== 'endless' && mode !== 'time')) return;
     const next = SHAPES[SHAPES.indexOf(runShape) + 1];
     if (!next || score !== UNLOCK[mode][next]) return;
     if (!isUnlocked(next)) {
@@ -2100,13 +2107,20 @@ window.Ads = (function () {
   $('thanks').addEventListener('click', closeThanks);
 
   function showMenu() {
+    cancelHelpReveal();
+    const session = tutorialRun;
+    if (session && session.practice) { mode = session.prevMode; shape = session.prevShape; runDate = session.prevDate; }
+    tut = null; hideCoach(); $('skipBtn').hidden = true;
     state = 'menu';
+    menuEl.parentElement.classList.add('menu-open');
     trialRun = false;
     overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true;
     menuEl.hidden = false;
     reset();
     renderMenu();
+    tutorialRun = null;
     $('helpBtn').hidden = false;
+    if (!(session && session.practice)) revealHelp();
   }
 
   // Shows a rewarded ad; if none could be shown or it was closed early, says so instead of failing silently.
@@ -2150,7 +2164,8 @@ window.Ads = (function () {
     }
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
-    gamesPlayed++;
+    const practice = tutorialRun && tutorialRun.practice;
+    if (!practice) gamesPlayed++;
     const wasDailyLocked = !modeUnlocked('daily'), wasTimeLocked = !modeUnlocked('time');
     store.set('ss_games', (store.get('ss_games', 0) || 0) + 1);
     let isNew = false, best;
@@ -2162,10 +2177,10 @@ window.Ads = (function () {
       best = rec.best;
     } else {
       best = bestOf(mode, runShape);
-      isNew = !trialRun && score > best;
+      isNew = !practice && !trialRun && score > best;
       if (isNew) { best = score; store.set(bestKey(mode, runShape), best); }
     }
-    const canContinue = !continued && score >= MIN_SCORE_TO_CONTINUE && mode !== 'daily';
+    const canContinue = !practice && !continued && score >= MIN_SCORE_TO_CONTINUE && mode !== 'daily';
     const opened = [];
     if (wasDailyLocked && modeUnlocked('daily')) opened.push('Daily challenge');
     if (wasTimeLocked && modeUnlocked('time')) opened.push('Time Attack');
@@ -2240,6 +2255,11 @@ window.Ads = (function () {
       scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true; $('offer').hidden = true;
       overEl.hidden = false;
       overAt = performance.now();
+      if (tutorialRun && tutorialRun.practice) {
+        $('overMode').hidden = false; $('overMode').textContent = 'Tutorial practice · Square';
+        $('newBest').hidden = true; $('unlockNote').hidden = true;
+        $('againBtn').textContent = 'Practice again';
+      }
       maybeAskReview(isNew);
     }
   }
@@ -2341,6 +2361,8 @@ window.Ads = (function () {
 
 
   function start() {
+    cancelHelpReveal();
+    tutorialRun = null;
     // the menu turns the tower a quarter turn per mode; every run starts at the same angle so blocks
     // always come from the upper left and upper right
     const cur = spin ? spin.to : world.rotation.y, home = Math.round(cur / (Math.PI * 2)) * Math.PI * 2;
@@ -2348,6 +2370,7 @@ window.Ads = (function () {
     $('helpBtn').hidden = true;
     reset();
     state = 'playing';
+    menuEl.parentElement.classList.remove('menu-open');
     menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
     renderBest();
     hideTip();
@@ -2357,6 +2380,7 @@ window.Ads = (function () {
 
   async function playAgain() {
     if (busy) return;
+    if (tutorialRun && tutorialRun.practice) { startTutorial(true); return; }
     if (trialRun && !isUnlocked(runShape)) {
       // another trial costs another rewarded ad
       if (await rewarded()) start();
@@ -2369,11 +2393,8 @@ window.Ads = (function () {
     start();
   }
 
-  // ---------- first-run tutorial: a real, moving game with short coach cards ----------
-  // Four ideas, in an order that works however the player plays:
-  //  1 tap to drop -> 2 the overhang is cut -> 3 three Perfects in a row grow it back -> 4 a miss ends the run.
-  // Before the first slice the Perfect window is tiny (so a slice happens); after it, it is wide (so Perfects happen).
-  // A miss at any time is explained and replayed; if the player never misses, the game shows one at the end.
+  // ---------- tutorial: coach a Square run, then hand the same tower back to the player ----------
+  // Early misses recover without recording a loss. Skip is always available during teaching.
   const TUT_STEPS = 4;
   let coachTimer = 0;
   function coach(pos, title, line, step, pips) {
@@ -2397,15 +2418,20 @@ window.Ads = (function () {
   }
   function hideCoach() { clearTimeout(coachTimer); const c = $('coach'); c.classList.remove('show'); setTimeout(() => { if (!c.classList.contains('show')) c.hidden = true; }, 300); }
 
-  function startTutorial() {
+  function startTutorial(practice = true) {
+    cancelHelpReveal();
+    const previous = tutorialRun;
+    tutorialRun = { practice, prevMode: previous ? previous.prevMode : mode, prevShape: previous ? previous.prevShape : shape, prevDate: previous ? previous.prevDate : runDate };
     { const cur = spin ? spin.to : world.rotation.y; world.rotation.y = Math.round(cur / (Math.PI * 2)) * Math.PI * 2; spin = null; }
-    tut = { prevMode: mode, prevShape: shape, tol: 0.06, phase: 'slice', streak: 0, fails: 0, missRow: 0, misses: 0, auto: false, missSeen: false, drops: 0, lock: false, demo: null };
+    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, lock: false };
     trialRun = false;
-    mode = 'endless'; shape = 'square';
+    mode = 'endless'; shape = 'square'; runDate = null;
     reset();
     state = 'playing';
-    menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = false;
+    menuEl.parentElement.classList.remove('menu-open');
+    menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; $('intro').hidden = true; scoreEl.hidden = false;
     $('helpBtn').hidden = true; $('skipBtn').hidden = false; $('sub').hidden = true; $('bestTag').hidden = true; $('hint').hidden = true;
+    hideTip();
     spawnMoving();
     tutCard();
   }
@@ -2418,49 +2444,38 @@ window.Ads = (function () {
 
   function tutAfterDrop(kind) {
     const t = tut;
-    t.drops++; t.missRow = 0;
-    const L = (x) => t.auto ? '' : x; // the ghost player needs no instructions
     if (t.phase === 'slice') {
       if (kind === 'slice') {
         t.phase = 'perfect'; t.tol = 0.75; combo = 0; t.streak = 0;
-        coach('low', 'Overhang gets cut', L('Now line it up exactly'), 2);
-      } else coach('top', 'Perfect! Nothing cut', L('Keep tapping'), 1);
+        coach('low', 'Overhang gets cut', 'Now line it up exactly', 2);
+      } else coach('top', 'Perfect! Nothing cut', 'Try a little off-center to see a cut', 1);
     } else if (t.phase === 'perfect') {
-      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', L('3 Perfects in a row'), 3, 0); }
+      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', '3 Perfects in a row', 3, 0); }
       else {
         t.streak++;
         if (kind === 'grow' || t.streak >= 3) {
           t.phase = 'grown'; t.lock = true;
-          coach('top', 'It grew back!', L('Perfects in a row rebuild your tower'), 3, 3);
-          setTimeout(() => { if (tut === t) tutNext(); }, 2000);
+          coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3, 3);
+          setTimeout(() => { if (tut === t) completeLesson(); }, 2000);
           return;
         }
-        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, L('3 in a row grows it back'), 3, t.streak);
+        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', 3, t.streak);
       }
     }
-    if (t.drops >= 12 && !t.auto && t.phase !== 'grown') tutAuto(); // taking long: show the rest
   }
 
-  // The ghost player: taps are off and the game drops each block as it passes the right spot,
-  // so a player who keeps missing still sees every lesson in a few seconds.
-  function tutAuto() {
-    const t = tut;
-    t.auto = true; t.lock = true; t.autoWait = 0.9;
-    coach('top', 'Watch this one', '', t.phase === 'slice' ? 1 : 3);
-  }
-  function showTutEnd() {
-    const t = tut;
-    hideCoach();
-    $('tutEndTitle').textContent = t && t.auto ? 'Your turn!' : "You're ready!";
-    $('tutEnd').hidden = false;
-  }
-
-  function tutNext() {
-    const t = tut;
-    if (t.missSeen) { showTutEnd(); state = 'over'; if (moving) { removeMesh(moving.mesh); moving = null; } return; }
-    // show a miss: the moving block keeps its normal speed and drops by itself once it is clear of the tower
-    t.lock = true; t.demo = { crossed: false };
-    coach('low', "Miss the tower and it's over", '', 4);
+  function completeLesson() {
+    if (!tut) return;
+    tut = null; // normal Perfect window, speed and player control resume on this same tower
+    $('skipBtn').hidden = true;
+    if (!tutorialRun.practice) {
+      store.set('ss_tut_done', 1);
+      if (!store.get('ss_help_reveal', '')) store.set('ss_help_reveal', 'pending');
+    }
+    coach('low', "You're ready! Keep stacking!", 'Miss the tower and the run ends', 4);
+    const session = tutorialRun;
+    setTimeout(() => { if (tutorialRun === session) hideCoach(); }, 1800);
+    renderBest(); updateSub();
   }
 
   function tutGameOver() {
@@ -2473,45 +2488,53 @@ window.Ads = (function () {
     }
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
-    if (t.demo) { setTimeout(() => { if (tut === t) showTutEnd(); }, 1400); return; }
-    // the player missed: that is lesson 4, learned early; explain it and hand back a block
-    t.missSeen = true; t.lock = true; t.streak = 0; combo = 0; t.drops++; t.missRow++; t.misses++;
-    const handOver = t.missRow >= 3 || t.misses >= 5 || t.drops >= 12;
-    coach('low', 'Missed! That ends a run', handOver ? '' : 'Here comes another block', 4);
+    t.lock = true; t.streak = 0; combo = 0;
+    coach('low', 'Missed! Try another block', 'Skip any time to return to the menu', 4);
     setTimeout(() => {
       if (tut !== t) return;
-      boostAfterContinue(true); // a thin tower gets wider again so the lesson can go on
+      boostAfterContinue(true);
       state = 'playing'; spawnMoving();
-      if (handOver) tutAuto(); else { t.lock = false; tutCard(); }
+      t.lock = false; tutCard();
     }, 1200);
   }
 
-  // Ends the tutorial; the summary card flies into the help button so players know where to find it again.
-  function finishTutorial() {
+  function skipTutorial() {
     if (!tut) return;
-    const t = tut;
-    store.set('ss_tut_done', 1);
-    hideCoach(); $('skipBtn').hidden = true;
-    mode = t.prevMode; shape = t.prevShape;
-    tut = null;
-    const endEl = $('tutEnd'), card = endEl.querySelector('.card'), wasOpen = !endEl.hidden;
+    if (!tutorialRun.practice) store.set('ss_tut_done', 1);
+    // Abandon this run without a loss, score save, or completion reveal.
     showMenu();
-    const help = $('helpBtn');
-    const beckon = () => {
-      help.classList.remove('beckon'); void help.offsetWidth; help.classList.add('beckon');
-      const tip = document.createElement('div'); tip.id = 'helpTip'; tip.textContent = 'How to play · any time';
-      document.body.append(tip); setTimeout(() => tip.remove(), 3300);
-    };
-    if (!wasOpen || reduceMotion) { endEl.hidden = true; beckon(); return; }
-    const a = card.getBoundingClientRect(), b = help.getBoundingClientRect();
-    const dx = (b.left + b.width / 2) - (a.left + a.width / 2), dy = (b.top + b.height / 2) - (a.top + a.height / 2);
-    endEl.style.transition = 'background 0.5s'; endEl.style.background = 'transparent';
-    card.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(0.08)'; card.style.opacity = '0.2';
-    setTimeout(() => { endEl.hidden = true; card.style.transform = ''; card.style.opacity = ''; endEl.style.background = ''; beckon(); }, 650);
   }
-  $('tutGo').addEventListener('click', () => { initAudio(); finishTutorial(); });
-  $('skipBtn').addEventListener('click', () => { initAudio(); finishTutorial(); });
-  $('helpBtn').addEventListener('click', () => { initAudio(); if (state === 'menu' && !busy) startTutorial(); });
+
+  let helpAnimation = null;
+  function cancelHelpReveal() {
+    if (helpAnimation) helpAnimation.cancel();
+    helpAnimation = null;
+    $('helpReveal').hidden = true;
+    $('helpBtn').classList.remove('beckon');
+  }
+  // Consume only on return to the menu: the first results remain completely unobstructed.
+  function revealHelp() {
+    if (store.get('ss_help_reveal', '') !== 'pending') return;
+    store.set('ss_help_reveal', 'done');
+    if (reduceMotion) return;
+    const chip = $('helpReveal'), help = $('helpBtn');
+    chip.hidden = false;
+    const a = chip.getBoundingClientRect(), b = help.getBoundingClientRect();
+    const dx = b.left + b.width / 2 - a.left - a.width / 2, dy = b.top + b.height / 2 - a.top - a.height / 2;
+    const animation = chip.animate([
+      { transform: 'translate(-50%, -50%)', opacity: 1 },
+      { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(0.12)', opacity: 0.2 }
+    ], { duration: 650, easing: 'cubic-bezier(.6,0,.3,1)' });
+    helpAnimation = animation;
+    animation.onfinish = () => {
+      if (helpAnimation !== animation) return;
+      chip.hidden = true; helpAnimation = null;
+      help.classList.add('beckon');
+    };
+  }
+  $('helpBtn').addEventListener('animationend', () => $('helpBtn').classList.remove('beckon'));
+  $('skipBtn').addEventListener('click', () => { initAudio(); skipTutorial(); });
+  $('helpBtn').addEventListener('click', () => { initAudio(); if (state === 'menu' && !busy) startTutorial(true); });
 
   // ---------- audio + haptics ----------
   let ac = null;
@@ -2566,7 +2589,7 @@ window.Ads = (function () {
   // Ask for an App Store / Play rating at a happy moment: a new best of 15+, after 5+ games,
   // at most once every 30 days and 3 times overall (the stores limit how often the dialog really shows).
   function maybeAskReview(isNew) {
-    if (!Review || !isNew || score < 15 || (store.get('ss_games', 0) || 0) < 5) return;
+    if ((tutorialRun && tutorialRun.practice) || !Review || !isNew || score < 15 || (store.get('ss_games', 0) || 0) < 5) return;
     const r = store.get('ss_review', { n: 0, t: 0 }) || { n: 0, t: 0 };
     if (r.n >= 3 || Date.now() - r.t < 30 * 864e5) return;
     store.set('ss_review', { n: r.n + 1, t: Date.now() });
@@ -2583,14 +2606,14 @@ window.Ads = (function () {
     else if (state === 'over' && performance.now() - overAt > 700 && !overEl.hidden && !$('againBtn').hidden && !trialRun) playAgain();
   }
   window.addEventListener('pointerdown', (e) => {
-    if (e.target.closest && e.target.closest('button, .card, #calendar, #tutEnd')) return;
+    if (e.target.closest && e.target.closest('button, a, .card, #calendar, #studioIntro')) return;
     if (!$('calendar').hidden) return;
     if (busy || window.Ads.isOpen()) return;
     e.preventDefault();
     onTap();
   });
   window.addEventListener('keydown', (e) => {
-    if (e.target.closest && e.target.closest('button')) return;
+    if (e.target.closest && e.target.closest('button, a')) return;
     if (!$('calendar').hidden) return;
     if (busy || window.Ads.isOpen()) return;
     if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); onTap(); }
@@ -2644,27 +2667,7 @@ window.Ads = (function () {
     }
 
     if (state === 'playing') {
-      if (moving && tut && tut.auto && !tut.demo && (tut.phase === 'slice' || tut.phase === 'perfect')) {
-        const prev = moving.off;
-        moving.off += moving.dir * speed() * dt;
-        if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
-        if (moving.off < -RANGE) { moving.off = -RANGE; moving.dir = 1; }
-        const top = topLayer();
-        moving.mesh.position.x = top.cx + (moving.axis === 'x' ? moving.off : 0);
-        moving.mesh.position.z = top.cz + (moving.axis === 'z' ? moving.off : 0);
-        tut.autoWait -= dt;
-        const aim = tut.phase === 'slice' ? 0.8 * moving.dir : 0; // first a visible cut, then dead-centre drops
-        if (tut.autoWait <= 0 && (prev - aim) * (moving.off - aim) <= 0) { moving.off = aim; tut.autoWait = 0.5; place(); }
-      } else if (moving && tut && tut.demo) {
-        moving.off += moving.dir * speed() * dt;
-        if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
-        if (moving.off < -RANGE) { moving.off = -RANGE; moving.dir = 1; }
-        const top = topLayer();
-        moving.mesh.position.x = top.cx + (moving.axis === 'x' ? moving.off : 0);
-        moving.mesh.position.z = top.cz + (moving.axis === 'z' ? moving.off : 0);
-        if (Math.abs(moving.off) < 0.5) tut.demo.crossed = true;
-        else if (tut.demo.crossed && Math.abs(moving.off) > START + 0.5 && !tut.demo.dropped) { tut.demo.dropped = true; place(); }
-      } else if (moving) {
+      if (moving && !(tut && tut.lock)) {
         moving.off += moving.dir * speed() * dt;
         if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
         if (moving.off < -RANGE) { moving.off = -RANGE; moving.dir = 1; }
@@ -2727,7 +2730,15 @@ window.Ads = (function () {
   if (location.hash === '#shots') {
     window.__ts = {
       start(m, s) { if (m) mode = m; if (s) shape = s; start(); },
-      tutorial() { startTutorial(); },
+      tutorial(practice = true) { startTutorial(practice); },
+      get tutorialPhase() { return tut ? tut.phase : null; },
+      get practice() { return !!(tutorialRun && tutorialRun.practice); },
+      get mode() { return mode; },
+      get shape() { return shape; },
+      get runShape() { return runShape; },
+      get speed() { return speed(); },
+      get angle() { return world.rotation.y; },
+      get rotating() { return !!spin; },
       get coach() { const c = $('coach'); return c.hidden ? '' : c.querySelector('b').textContent; },
       place() { if (moving) place(); },
       setOff(v) { if (moving) moving.off = v; },
@@ -2750,8 +2761,8 @@ window.Ads = (function () {
   reset();
   renderMenu();
   const firstRun = () => {
-    if (!store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots') startTutorial();
-    else $('helpBtn').hidden = false;
+    if (!store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots') startTutorial(false);
+    else { $('helpBtn').hidden = false; revealHelp(); }
   };
   if (window.__introPending) playIntro(firstRun); else firstRun();
   requestAnimationFrame(frame);
@@ -2763,8 +2774,9 @@ window.Ads = (function () {
     const end = () => {
       if (ended) return; ended = true;
       try { localStorage.setItem('beno74_intro_done', '1'); } catch (e) {}
+      done();
       el.classList.add('out');
-      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); done(); }, 350);
+      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); }, reduceMotion ? 0 : 350);
     };
     el.hidden = false;
     el.addEventListener('pointerdown', end, { once: true });
