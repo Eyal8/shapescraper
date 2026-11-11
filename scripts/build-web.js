@@ -6,6 +6,9 @@ const www = path.join(root, 'www');
 fs.mkdirSync(www, { recursive: true });
 
 let game = fs.readFileSync(path.join(root, 'src/game.html'), 'utf8');
+// Share the existing native launch gradient with the first intro frame, with no image-fetch gap.
+const launchSky = fs.readFileSync(path.join(root, 'ios/App/App/Assets.xcassets/Splash.imageset/Default@1x~universal~anyany.png'));
+game = game.replace('url("launch-background.png")', `url("data:image/png;base64,${launchSky.toString('base64')}")`);
 const cdn = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
 if (!game.includes(cdn)) throw new Error('three.js CDN tag not found in src/game.html');
 game = game.replace(`<script src="${cdn}"></script>`, '<script src="capacitor.js"></script>\n<script src="three.min.js"></script>');

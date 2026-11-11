@@ -22,6 +22,11 @@
   --bg-fallback: #c39ee0;
   --display: "Unbounded", "Arial Black", system-ui, sans-serif;
   --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --motion-in: 220ms;
+  --motion-out: 160ms;
+  --motion-menu: 260ms;
+  --motion-press: 120ms;
+  --ease-ui: cubic-bezier(.2,.8,.2,1);
   color-scheme: dark;
 }
 html, body { height: 100%; overflow: hidden; }
@@ -36,7 +41,7 @@ body {
   touch-action: none;
   font-family: var(--mono);
 }
-[hidden] { display: none !important; }
+[hidden] { display: none !important; pointer-events: none !important; }
 #grainFx {
   position: fixed; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: overlay; opacity: 0.32;
   background-size: 120px 120px; image-rendering: pixelated;
@@ -47,6 +52,9 @@ body {
   background: rgba(20,23,40,0.55); color: #fff; font-size: 11px; letter-spacing: 0.06em; cursor: pointer;
 }
 button { font: inherit; color: inherit; }
+button, .menu-footer a, #week { transition: scale var(--motion-press) var(--ease-ui), background-color var(--motion-press), color var(--motion-press), opacity var(--motion-press); }
+button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
+.tog[aria-pressed="true"] { background: rgba(20,23,40,.62); border-color: rgba(255,255,255,.65); color: #fff; }
 #c, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #fx { pointer-events: none; z-index: 15; }
 .hud {
@@ -81,12 +89,15 @@ button { font: inherit; color: inherit; }
 #popup {
   margin-top: 22px; font-family: var(--display); font-weight: 500;
   font-size: 23px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
-  text-shadow: 0 2px 14px var(--shadow);
-  opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
+  max-width: calc(100% - 24px); box-sizing: border-box; padding: 5px 10px; border-radius: 12px;
+  color: #fff; background: rgba(20,23,40,.38); text-shadow: 0 1px 3px rgba(10,12,24,.8);
+  opacity: 0; transform: translateY(4px) scale(.98); transition: opacity var(--motion-out), transform var(--motion-out) var(--ease-ui);
 }
-#popup.show { opacity: 1; transform: none; }
+#popup.show { opacity: 1; transform: none; transition-duration: var(--motion-in); }
 #popup small { display: block; margin-top: 4px; font-size: 15px; letter-spacing: 0.14em; color: var(--gold); }
-#popup.gold { padding: 6px 14px; border-radius: 999px; font-weight: 800; color: #fff; background: rgba(20,23,40,0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-shadow: none; }
+#popup.streak { background: rgba(20,23,40,.72); }
+#popup.gold { padding: 8px 14px; border: 1px solid rgba(255,209,102,.65); font-weight: 800; background: rgba(20,23,40,.86); text-shadow: none; }
+#bestTag.new { padding: 5px 10px; border-radius: 10px; background: rgba(20,23,40,.76); text-shadow: none; }
 #hint {
   position: fixed; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom)); transform: translateX(-50%);
   padding: 10px 18px; border-radius: 999px; background: rgba(20,23,40,0.35); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
@@ -112,33 +123,41 @@ button { font: inherit; color: inherit; }
 #banner small { display: block; margin-top: 8px; font: 500 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); }
 #thanks { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px;
   background: radial-gradient(circle at 50% 42%, rgba(255, 209, 102, 0.42), rgba(20, 23, 40, 0.72) 70%);
-  opacity: 0; transition: opacity 0.3s; }
+  opacity: 0; transition: opacity var(--motion-out); }
 #thanks.show { opacity: 1; }
 #thanks .thanks-card { position: relative; width: min(340px, 100%); padding: 28px 22px 20px; border-radius: 28px; text-align: center;
   background: var(--card-strong); border: 2px solid var(--gold); box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.18), 0 20px 60px rgba(0, 0, 0, 0.35);
-  overflow: hidden; transform: scale(0.6); }
-#thanks.show .thanks-card { animation: thanksIn 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) forwards; }
+  overflow: hidden; transform: scale(.97); }
+#thanks.show { transition-duration: var(--motion-in); }
+#thanks.show .thanks-card { animation: surfaceIn var(--motion-in) var(--ease-ui) both; }
 #thanks .thanks-card::after { content: ''; position: absolute; top: 0; bottom: 0; width: 45%; left: -60%;
   background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent); animation: sweep 2.2s ease 0.4s infinite; }
 #thanks .thanks-kicker { font: 500 12px var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); }
 #thanks .thanks-title { margin-top: 8px; font-family: var(--display); font-weight: 800; font-size: clamp(26px, 8vw, 34px); line-height: 1.05; }
 #thanks .thanks-shapes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px 0 14px; }
-#thanks .thanks-shapes svg { width: 28px; height: 28px; fill: var(--gold); opacity: 0; animation: stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+#thanks .thanks-shapes svg { width: 28px; height: 28px; fill: var(--gold); opacity: 0; animation: stamp var(--motion-in) var(--ease-ui) forwards; }
 #thanks .thanks-shapes.one svg { width: 56px; height: 56px; }
 #thanks .thanks-sub { font: 500 12px/1.5 var(--mono); letter-spacing: 0.06em; opacity: 0.85; }
 #thanks .thanks-tap { margin-top: 16px; font: 500 10px var(--mono); letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-@keyframes thanksIn { 0% { transform: scale(0.6) rotate(-4deg); } 100% { transform: none; } }
 .link-btn.loading { opacity: 0.55; text-decoration: none; }
 #studioIntro { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
-  background: linear-gradient(115deg, #9b6bff 0%, #9aa6f3 45%, #7fe3d6 80%, #b8f5dc 100%); transition: opacity 0.35s; }
-#studioIntro img { width: min(62vw, 300px); height: auto; opacity: 0; transform: scale(0.86); animation: introIn 0.7s cubic-bezier(0.2, 1.2, 0.4, 1) 0.1s forwards; }
+  /* The build embeds the native launch artwork: no image-fetch or unpainted startup frame. */
+  background: #c39ee0 url("launch-background.png") center / cover no-repeat; transition: opacity var(--motion-out); }
+html[data-launch-fit="stretch"] #studioIntro { background-size: 100% 100%; }
+#studioIntro::before, #studioIntro::after { content: ''; position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+#studioIntro::before { background: linear-gradient(115deg, #9b6bff, #9aa6f3 45%, #7fe3d6 80%, #b8f5dc); }
+#studioIntro::after { background: linear-gradient(125deg, #a17df5, #91c8e8 48%, #9bead5 82%, #b8f5dc); }
+#studioIntro.lit::before { animation: introLight 240ms var(--ease-ui) both; }
+#studioIntro.lit::after { animation: introLight 1300ms cubic-bezier(.4,0,.2,1) 240ms both; }
+#studioIntro img { position: relative; z-index: 1; width: min(62vw, 300px); height: auto; opacity: 0; }
+#studioIntro.lit img { animation: introLight var(--motion-in) var(--ease-ui) both; }
 #studioIntro.out { opacity: 0; }
-@keyframes introIn { to { opacity: 1; transform: none; } }
-.menu-footer { pointer-events: auto; text-align: center; margin-top: 0; }
-.menu-footer a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 0 10px; color: rgba(255,255,255,0.9); text-decoration: none; text-shadow: 0 1px 3px rgba(10,12,24,0.8), 0 0 9px rgba(10,12,24,0.45); }
+@keyframes introLight { to { opacity: 1; } }
+.menu-footer { pointer-events: auto; display: flex; align-items: center; justify-content: center; text-align: center; margin-top: 0; color: #fff; font: 500 10px var(--mono); text-shadow: 0 1px 2px #141728, 0 0 5px #141728; }
+.menu-footer a { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; min-height: 46px; box-sizing: border-box; padding: 0 10px; color: #fff; text-decoration: none; text-shadow: 0 1px 2px #141728, 0 0 5px #141728, 0 0 9px #141728; }
 .menu-footer a:focus-visible { outline: 2px solid white; outline-offset: -2px; border-radius: 8px; }
 .credit { font: 500 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
-.footer-links { margin-top: 0; font: 500 10px var(--mono); }
+#noAdsBtn.owned { align-self: center; padding: 5px 8px; border-radius: 999px; background: rgba(20,23,40,.64); color: var(--done); font-size: 10px; opacity: 1; }
 @keyframes pop {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
   12% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
@@ -147,6 +166,8 @@ button { font: inherit; color: inherit; }
   100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
 }
 .panel { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; text-align: center; }
+.panel:not([hidden]), #calendar:not([hidden]) .cal-card, #intro:not([hidden]) .card { animation: surfaceIn var(--motion-in) var(--ease-ui) both; }
+@keyframes surfaceIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
 .panel h1 {
   margin: 0; font-family: var(--display); font-weight: 800;
   font-size: clamp(32px, 10vw, 58px); line-height: 0.95; letter-spacing: -0.01em; text-wrap: balance;
@@ -174,7 +195,7 @@ button { font: inherit; color: inherit; }
   font: 500 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
   padding: 10px 2px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
 }
-.seg-btn[aria-checked="true"] { background: var(--ink); color: var(--ink-dark); }
+.seg-btn[aria-checked="true"] { background: #fff; color: var(--ink-dark); }
 .seg-btn.locked { color: var(--ink-dim); }
 .seg-btn[aria-checked="true"].locked { color: var(--ink-dark); opacity: 0.85; }
 .lock { width: 10px; height: 10px; flex: none; }
@@ -200,7 +221,7 @@ button { font: inherit; color: inherit; }
 .shape svg.g { width: 24px; height: 24px; display: block; }
 .shape .glyph { fill: currentColor; }
 .shape span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shape[aria-checked="true"] { background: var(--ink); color: var(--ink-dark); border-color: var(--ink); }
+.shape[aria-checked="true"] { background: #fff; color: var(--ink-dark); border-color: #fff; }
 .shape.locked { color: var(--ink-dim); }
 .shape[aria-checked="true"].locked { color: var(--ink-dark); }
 .shape.locked .glyph { opacity: 0.45; }
@@ -227,7 +248,7 @@ button { font: inherit; color: inherit; }
   background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink);
   font: 500 13px var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
 }
-.btn.primary { background: var(--ink); color: var(--ink-dark); border-color: var(--ink); }
+.btn.primary { background: #fff; color: var(--ink-dark); border-color: #fff; }
 .btn small { display: block; margin-top: 4px; font-size: 10px; letter-spacing: 0.1em; opacity: 0.6; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .link-btn {
@@ -245,18 +266,18 @@ button { font: inherit; color: inherit; }
 .offer-ring span { position: absolute; inset: 0; display: grid; place-items: center; font: 800 40px var(--display); font-variant-numeric: tabular-nums; }
 .offer-title { font: 800 24px/1.1 var(--display); }
 #celebrate { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.check { width: 56px; height: 56px; border-radius: 50%; background: var(--done); display: grid; place-items: center; animation: stamp 0.5s cubic-bezier(.2,1.6,.4,1) both; }
+.check { width: 56px; height: 56px; border-radius: 50%; background: var(--done); display: grid; place-items: center; animation: stamp var(--motion-in) var(--ease-ui) both; }
 .check svg { width: 28px; height: 28px; }
 .check path { fill: none; stroke: var(--ink-dark); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
 .celebrate-title { font: 800 26px/1.1 var(--display); }
 #unlockCard { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.stamp { min-width: 80px; padding: 14px 16px 10px; border-radius: 16px; background: var(--ink); color: var(--ink-dark); display: flex; flex-direction: column; align-items: center; gap: 6px; animation: stamp 0.5s cubic-bezier(.2,1.6,.4,1) both; box-shadow: 0 6px 22px rgba(20,24,40,0.25); }
+.stamp { min-width: 80px; padding: 14px 16px 10px; border-radius: 16px; background: #fff; color: var(--ink-dark); display: flex; flex-direction: column; align-items: center; gap: 6px; animation: stamp var(--motion-in) var(--ease-ui) both; box-shadow: 0 6px 22px rgba(20,24,40,0.25); }
 .stamp svg { width: 26px; height: 26px; }
 .stamp path { fill: var(--ink-dark); }
 .stamp span { font: 500 10px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
 #banner .bglyph { display: block; width: 44px; height: 44px; margin: 0 auto 8px; }
 #banner .bglyph path { fill: var(--gold); }
-@keyframes stamp { from { transform: scale(0.2) rotate(-25deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes stamp { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
 /* tutorial + help */
 #corner {
   position: fixed; z-index: 15; display: flex; gap: 10px;
@@ -275,9 +296,9 @@ button { font: inherit; color: inherit; }
   position: fixed; left: 50%; z-index: 14; width: min(340px, calc(100vw - 40px)); box-sizing: border-box;
   padding: 14px 18px 16px; border-radius: 22px; text-align: center; pointer-events: none;
   background: var(--card-strong); border: 1px solid var(--card-line); box-shadow: 0 14px 40px rgba(20, 24, 40, 0.25);
-  opacity: 0; transform: translate(-50%, 10px) scale(0.96); transition: opacity 0.3s, transform 0.35s cubic-bezier(.2,1.4,.4,1);
+  opacity: 0; transform: translate(-50%, 4px) scale(.98); transition: opacity var(--motion-out), transform var(--motion-out) var(--ease-ui);
 }
-#coach.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+#coach.show { opacity: 1; transform: translate(-50%, 0) scale(1); transition-duration: var(--motion-in); }
 #coach[data-pos="top"] { top: calc(env(safe-area-inset-top, 0px) + 200px); }
 #coach[data-pos="mid"] { top: 40%; }
 #coach[data-pos="low"] { bottom: calc(env(safe-area-inset-bottom, 0px) + 14%); }
@@ -287,9 +308,13 @@ button { font: inherit; color: inherit; }
 #coach .pips3 i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.7); box-sizing: border-box; }
 #coach .pips3 i.on { background: var(--gold); border-color: var(--gold); }
 #coach:not(:has(span:not(:empty))) b { margin-bottom: 0; }
-@keyframes cardIn { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
 #intro { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.35); }
-#intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; animation: cardIn 0.45s cubic-bezier(.2,1.3,.4,1); }
+/* Fixed modal exits are visual only; hidden state and input handling change immediately.
+   WebViews without discrete transitions fall back to an immediate hide. */
+#intro, #calendar { transition: opacity var(--motion-out), display var(--motion-out) allow-discrete; }
+#intro[hidden], #calendar[hidden] { opacity: 0; }
+#intro[hidden] *, #calendar[hidden] * { pointer-events: none !important; }
+#intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; }
 #introBody { display: flex; flex-direction: column; gap: 10px; text-align: center; }
 #intro p { margin: 0; font-size: 14px; line-height: 1.4; }
 /* shine on the Unlock-all offer after a trial run */
@@ -299,7 +324,9 @@ button { font: inherit; color: inherit; }
 @keyframes nudge { 0%, 60%, 100% { transform: scale(1); } 70% { transform: scale(1.04); } 80% { transform: scale(0.99); } }
 .btn.gold { background: var(--gold); border-color: var(--gold); color: #2a2140; }
 #calDayStatus { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-#offerTip { max-width: 260px; text-align: center; line-height: 1.5; color: var(--gold); }
+#offerScore { padding: 7px 12px; border-radius: 12px; background: rgba(20,23,40,.72); color: #fff; font: 800 18px/1.2 var(--display); letter-spacing: .04em; }
+#offerTip { max-width: 260px; text-align: center; line-height: 1.5; color: #fff; }
+#offerTip span { display: block; font-size: 12px; letter-spacing: .02em; text-transform: none; }
 /* daily: perfect-drop pips */
 #sub.pips { display: flex; gap: 6px; padding: 8px 12px; flex-wrap: wrap; justify-content: center; max-width: 80vw; }
 #sub.pips i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.75); box-sizing: border-box; }
@@ -377,7 +404,7 @@ button { font: inherit; color: inherit; }
 #adClose:disabled { opacity: 0.4; }
 /* menu pages: three equal-height pages side by side; the track slides between them */
 .pages { width: 100%; overflow: hidden; touch-action: pan-y; }
-.track { display: flex; transition: transform 0.38s cubic-bezier(.3,.8,.3,1); }
+.track { display: flex; transition: transform var(--motion-menu) var(--ease-ui); }
 .page { flex: 0 0 100%; min-width: 0; box-sizing: border-box; padding: 2px; display: flex; flex-direction: column; gap: 12px; }
 .page-main { display: flex; flex-direction: column; gap: 12px; flex: 1; }
 .page .play { margin-top: auto; min-height: 62px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 10px; }
@@ -403,14 +430,20 @@ button { font: inherit; color: inherit; }
 .cal-detail span { display: block; text-wrap: balance; }
 p, .info, .label, .celebrate-title { text-wrap: balance; }
 @media (max-height: 720px) { .panel h1 { font-size: 30px; } .card { gap: 9px; padding: 12px; } .tagline { display: none; } }
-.hud.menu-open #popup { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px); width: calc(100% - 32px); margin-top: 0; z-index: 16; }
+.hud.menu-open #popup { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px); width: max-content; max-width: calc(100% - 32px); margin-top: 0; z-index: 16; }
 @media (max-height: 720px) { #menu { gap: 6px; } }
 @media (max-height: 640px) {
   #menu .page-main, #menu .page-lock { min-height: 142px; }
   #menu .page, #menu .page-main { gap: 8px; }
   #menu .page .play { min-height: 52px; }
 }
-@media (prefers-reduced-motion: reduce) { body { transition: none; } #banner, .check, .stamp, #helpBtn.beckon, #studioIntro img { animation: none; } #studioIntro img { opacity: 1; transform: none; } #coach, #studioIntro { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  button:enabled:active, .menu-footer a:active, #week:active { scale: none; }
+  #studioIntro.lit img, #thanks .thanks-shapes svg { opacity: 1; }
+  #thanks .thanks-card, #score.bump { transform: none; }
+  #studioIntro.lit::before { opacity: 1; }
+}
 </style>
 
 <canvas id="c" aria-label="Shapescraper game"></canvas>
@@ -484,8 +517,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
     </div>
     <footer class="menu-footer" aria-label="Studio and privacy">
-      <a class="credit" href="https://beno74.com" target="_blank" rel="noopener noreferrer">by BENO74 Studios</a>
-      <div class="footer-links"><a href="https://beno74.com/privacy/shapescraper" target="_blank" rel="noopener noreferrer">Privacy Policy</a><span aria-hidden="true">·</span><a href="https://beno74.com" target="_blank" rel="noopener noreferrer">Website</a></div>
+      <a class="credit" href="https://beno74.com" target="_blank" rel="noopener noreferrer">BENO74 STUDIOS</a><span aria-hidden="true">·</span><a href="https://beno74.com/privacy/shapescraper" target="_blank" rel="noopener noreferrer">Privacy</a>
     </footer>
   </div>
 
@@ -494,7 +526,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <div class="offer-title">Keep going?</div>
       <div class="offer-ring"><svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track-c" cx="56" cy="56" r="48"/><circle class="prog" id="offerProg" cx="56" cy="56" r="48"/></svg><span id="offerCount">5</span></div>
       <div class="label" id="offerScore"></div>
-      <div class="label" id="offerTip" hidden>One continue per run · a thin tower gets a bigger block</div>
+      <div class="label" id="offerTip" hidden>ONE CONTINUE PER RUN<span>Get a wider block.</span></div>
       <div class="actions">
         <button type="button" class="btn primary" id="offerYes">Continue<small>Watch a short ad</small></button>
       </div>
@@ -603,6 +635,8 @@ window.__introPending = (function () {
   } catch (e) { return false; }
 })();
 // Resolve intro visibility before loading the game libraries, so the first HTML paint is intentional.
+// Android's launch bitmap fills the screen; iOS uses aspect fill on the same gradient artwork.
+if (/Android/i.test(navigator.userAgent)) document.documentElement.dataset.launchFit = 'stretch';
 if (window.__introPending) document.getElementById('studioIntro').hidden = false;
 let launchHidePromise;
 window.__hideLaunchScreen = () => launchHidePromise || (launchHidePromise = (async () => {
@@ -1386,7 +1420,8 @@ window.Ads = (function () {
   }
 
   function reset() {
-    clearTimeout(popupTimer); popupPriorityUntil = 0; popupEl.classList.remove('show', 'gold');
+    cancelResultCelebration(); resultCelebrated = false;
+    clearTimeout(popupTimer); popupPriorityUntil = 0; popupEl.classList.remove('show', 'gold', 'streak');
     while (world.children.length) removeMesh(world.children[0]);
     stack = []; debris = []; rings = []; moving = null;
     score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false; newlyUnlocked = null;
@@ -1469,7 +1504,7 @@ window.Ads = (function () {
       const label = combo > 1 ? 'Perfect ×' + combo : 'Perfect';
       const extra = [grewFrom ? 'Grow!' : maxed ? 'Full size!' : '', mode === 'time' ? '+' + TIME_BONUS + ' seconds' : ''].filter(Boolean);
       if (mode === 'time') timeLeft += TIME_BONUS;
-      showPopup(label, 0, extra);
+      showPopup(label, 0, extra, false, combo > 1 ? 'streak' : '');
       addRing(placed, y);
       if (maxed) { lessonTimeout(() => addRing(placed, y), 120); lessonTimeout(() => tone(1568, 0.25, 'sine', 0.1), 90); }
       tone(440 * Math.pow(2, (Math.min(combo - 1, 12) * 2) / 12), 0.22, 'sine', 0.18);
@@ -1546,8 +1581,7 @@ window.Ads = (function () {
     bestBeaten = true;
     renderBest();
     if (!unlockedNow) {
-      popupEl.classList.add('gold'); showPopup('New best!', 1800);
-      setTimeout(() => popupEl.classList.remove('gold'), 2100);
+      showPopup('New best!', 1800, null, false, 'milestone');
       celebrate(false);
       tone(784, 0.2, 'sine', 0.16); setTimeout(() => tone(1175, 0.3, 'sine', 0.15), 130);
       buzz([15, 30, 15], 'success');
@@ -1565,9 +1599,11 @@ window.Ads = (function () {
   }
 
   let popupTimer, popupPriorityUntil = 0;
-  function showPopup(text, ms, sub, priority = false) {
+  function showPopup(text, ms, sub, priority = false, emphasis = '') {
     if (!priority && Date.now() < popupPriorityUntil) return;
     if (priority) popupPriorityUntil = Date.now() + ms;
+    popupEl.classList.toggle('gold', emphasis === 'milestone');
+    popupEl.classList.toggle('streak', emphasis === 'streak');
     popupEl.textContent = text;
     [].concat(sub || []).forEach((t) => { const s2 = document.createElement('small'); s2.textContent = t; popupEl.append(s2); });
     popupEl.classList.add('show');
@@ -1613,8 +1649,7 @@ window.Ads = (function () {
       unlock(next); newlyUnlocked = next;
       // a proper moment: banner with the new shape, confetti, a little fanfare, a success tap
       // light touch during play: confetti and a gold label under the score, nothing covering the tower
-      popupEl.classList.add('gold'); showPopup(SHAPE_NAMES[next] + ' unlocked!', 2200, null, true);
-      setTimeout(() => popupEl.classList.remove('gold'), 2500);
+      showPopup(SHAPE_NAMES[next] + ' unlocked!', 2200, null, true, 'milestone');
       celebrate(false);
       tone(660, 0.22, 'sine', 0.18); setTimeout(() => tone(880, 0.22, 'sine', 0.18), 120); setTimeout(() => tone(1320, 0.35, 'sine', 0.16), 240);
       buzz([20, 40, 20], 'success');
@@ -1649,14 +1684,28 @@ window.Ads = (function () {
 
   // ---------- celebration: confetti on a 2D canvas over the game ----------
   const fx = $('fx'), fctx = fx.getContext('2d');
-  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduceMotion = motionPreference.matches;
   const CONFETTI = ['#ffffff', '#ffd166', '#ff6b9a', '#7cf3c4', '#8ab6ff', '#ffb36b', '#c59bff'];
   let parts = [];
+  const MAX_PARTICLES = 360; // Purchase/Daily remain larger than the strongest run result (156).
+  let resultCelebrated = false, resultWaveTimers = [], resultFxBounds = null;
+  function cancelResultCelebration() {
+    resultWaveTimers.forEach(clearTimeout); resultWaveTimers = [];
+    if (resultFxBounds) { parts = []; fctx.clearRect(0, 0, innerWidth, innerHeight); }
+    resultFxBounds = null;
+  }
+  motionPreference.addEventListener('change', e => {
+    reduceMotion = e.matches;
+    if (reduceMotion) { cancelResultCelebration(); parts = []; fctx.clearRect(0, 0, innerWidth, innerHeight); }
+  });
   function sizeFx() { const d = Math.min(window.devicePixelRatio || 1, 2); fx.width = innerWidth * d; fx.height = innerHeight * d; fctx.setTransform(d, 0, 0, d, 0, 0); }
   window.addEventListener('resize', sizeFx); sizeFx();
   let burstGold = false;
   const GOLD = ['#ffd166', '#ffe9a8', '#ffffff', '#ffc23d', '#ffd166', '#ff6b9a'];
   function burst(x, y, n, angle, spread, power) {
+    if (reduceMotion) return;
+    n = Math.min(n, MAX_PARTICLES - parts.length);
     const pal = burstGold ? GOLD : CONFETTI;
     for (let i = 0; i < n; i++) {
       const a = angle + (Math.random() - 0.5) * spread, v = power * (0.55 + Math.random() * 0.6);
@@ -1670,6 +1719,27 @@ window.Ads = (function () {
     if (big) { burst(0, h * 0.75, 70, -Math.PI / 3, 0.8, 1100); burst(w, h * 0.75, 70, -Math.PI * 2 / 3, 0.8, 1100); }
     burst(w / 2, h * 0.3, big ? 60 : 40, -Math.PI / 2, Math.PI * 1.6, 700);
   }
+  // Only final results call this; New Best and Shape Unlocked share this one celebration.
+  function celebrateResult() {
+    if (resultCelebrated) return;
+    resultCelebrated = true;
+    if (dailyJustDone || (tutorialRun && tutorialRun.practice)) return;
+    // A quick miss after an in-play milestone must not carry its particles into a lower result tier.
+    parts = []; fctx.clearRect(0, 0, innerWidth, innerHeight);
+    if (reduceMotion || score < 10) return;
+    const count = score >= 100 ? 52 : score >= 50 ? 32 : score >= 25 ? 24 : 8;
+    const waves = score >= 100 ? 3 : score >= 50 ? 2 : 1;
+    const wave = () => {
+      if (state !== 'over' || overEl.hidden || reduceMotion) return;
+      const w = innerWidth, h = innerHeight;
+      // Side accents leave the card's centre clear, even on the smallest screen.
+      burst(0, h * .28, count / 2, -Math.PI / 3, .8, score >= 100 ? 820 : 560);
+      burst(w, h * .28, count / 2, -Math.PI * 2 / 3, .8, score >= 100 ? 820 : 560);
+    };
+    resultFxBounds = overEl.querySelector('.card');
+    wave();
+    for (let i = 1; i < waves; i++) resultWaveTimers.push(setTimeout(wave, i * 420));
+  }
   function stepFx(dt) {
     if (!parts.length) return;
     fctx.clearRect(0, 0, innerWidth, innerHeight);
@@ -1681,6 +1751,12 @@ window.Ads = (function () {
       fctx.save(); fctx.translate(p.x, p.y); fctx.rotate(p.r); fctx.scale(1, Math.cos(p.flip));
       fctx.globalAlpha = Math.min(1, p.life); fctx.fillStyle = p.c; fctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
       fctx.restore();
+    }
+    if (resultFxBounds && !overEl.hidden && !$('thanks').classList.contains('show')) {
+      for (const el of [resultFxBounds, $('toggles')]) {
+        const r = el.getBoundingClientRect();
+        fctx.clearRect(r.x - 6, r.y - 6, r.width + 12, r.height + 12);
+      }
     }
     if (!parts.length) fctx.clearRect(0, 0, innerWidth, innerHeight);
   }
@@ -1830,7 +1906,7 @@ window.Ads = (function () {
     cancelAnimationFrame(p._raf);
     p._animating = true;
     p.style.scrollSnapType = 'none';
-    const from = p.scrollLeft, t0 = performance.now(), dur = reduceMotion ? 1 : 360;
+    const from = p.scrollLeft, t0 = performance.now(), dur = reduceMotion ? 1 : 260;
     const step = (now) => {
       const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
       p.scrollLeft = from + (left - from) * e;
@@ -1931,7 +2007,8 @@ window.Ads = (function () {
   window.addEventListener('resize', () => syncCarousels());
   function renderStoreLinks() {
     const st = window.Store, owned = st && st.noAds();
-    $('noAdsBtn').textContent = owned ? 'Ads removed' : 'Remove ads · ' + (st ? st.price() : '$3.99');
+    $('noAdsBtn').textContent = owned ? 'Ad-free ✓' : 'Remove ads · ' + (st ? st.price() : '$3.99');
+    $('noAdsBtn').classList.toggle('owned', !!owned);
     $('noAdsBtn').disabled = !!owned;
     $('noAdsBtn').style.textDecoration = owned ? 'none' : '';
     $('restoreBtn').hidden = !(st && st.isNative) || (owned && st.allShapes());
@@ -1981,6 +2058,7 @@ window.Ads = (function () {
     return { min: dateToKey(min), max: dayKey() };
   }
   function openCalendar() {
+    cancelResultCelebration();
     calMonth = new Date(); calMonth.setDate(1); calSel = dayKey();
     renderCalendar();
     $('calendar').hidden = false;
@@ -2126,7 +2204,7 @@ window.Ads = (function () {
     const el = $('thanks');
     if (el.hidden) return;
     el.classList.remove('show');
-    setTimeout(() => { el.hidden = true; }, 300);
+    setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, reduceMotion ? 0 : 160);
   }
   $('thanks').addEventListener('click', closeThanks);
 
@@ -2255,7 +2333,6 @@ window.Ads = (function () {
         $('unlockTitle').textContent = SHAPE_NAMES[newlyUnlocked] + ' unlocked!';
         $('tryNewBtn').textContent = 'Play ' + SHAPE_NAMES[newlyUnlocked].toLowerCase();
         $('againBtn').textContent = 'Play ' + SHAPE_NAMES[runShape].toLowerCase() + ' again';
-        celebrate(true);
       } else if (trial) {
         $('againBtn').classList.remove('primary');
         $('againBtn').innerHTML = 'Try ' + SHAPE_NAMES[runShape].toLowerCase() + ' again<small>' + adNote() + '</small>';
@@ -2280,6 +2357,7 @@ window.Ads = (function () {
       un.hidden = !notes.length;
       scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true; $('offer').hidden = true;
       overEl.hidden = false;
+      celebrateResult();
       overAt = performance.now();
       if (tutorialRun && tutorialRun.practice) {
         $('overMode').hidden = false; $('overMode').textContent = 'Tutorial practice · Square';
@@ -2445,9 +2523,9 @@ window.Ads = (function () {
         c.append(row);
       }
       c.hidden = false; void c.offsetWidth; c.classList.add('show');
-    }, c.hidden ? 0 : 200);
+    }, c.hidden || reduceMotion ? 0 : 160);
   }
-  function hideCoach() { clearTimeout(coachTimer); const c = $('coach'); c.classList.remove('show'); setTimeout(() => { if (!c.classList.contains('show')) c.hidden = true; }, 300); }
+  function hideCoach() { clearTimeout(coachTimer); const c = $('coach'); c.classList.remove('show'); setTimeout(() => { if (!c.classList.contains('show')) c.hidden = true; }, reduceMotion ? 0 : 160); }
 
   function startTutorial(practice = true) {
     cancelHelpReveal();
@@ -2785,6 +2863,8 @@ window.Ads = (function () {
       get score() { return score; },
       get remainingTime() { return timeLeft; },
       get topArea() { return topLayer().area; },
+      get particles() { return parts.length; },
+      get resultWaves() { return resultWaveTimers.length; },
     palette(k) { setPalette(k); },
       timeLeft(v) { timeLeft = v; }
     };
@@ -2813,19 +2893,26 @@ window.Ads = (function () {
   firstRun();
   requestAnimationFrame(frame);
 
-  // ~1.6 s BENO74 Studios intro, first launch only; a tap skips it. No sound, no ads.
+  // 240 ms light-in + 1.3 s crossfade + 440 ms hold + 160 ms exit = 2.14 s.
+  // First launch only, stationary white logo, tap/keyboard to skip. No sound or ads.
   function playIntro(done) {
     const el = $('studioIntro');
-    let ended = false;
+    let ended = false, timer;
     const end = () => {
       if (ended) return; ended = true;
+      clearTimeout(timer);
+      el.removeEventListener('pointerdown', end);
+      window.removeEventListener('keydown', skipKey);
       try { localStorage.setItem('beno74_intro_done', '1'); } catch (e) {}
       el.classList.add('out');
-      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); done(); }, reduceMotion ? 0 : 350);
+      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); done(); }, reduceMotion ? 0 : 160);
     };
+    const skipKey = e => { if (e.code === 'Space' || e.code === 'Enter' || e.code === 'Escape') { e.preventDefault(); end(); } };
     el.hidden = false;
+    el.classList.add('lit');
     el.addEventListener('pointerdown', end, { once: true });
-    setTimeout(end, reduceMotion ? 600 : 1600);
+    window.addEventListener('keydown', skipKey);
+    timer = setTimeout(end, reduceMotion ? 600 : 1980);
   }
 })();
 </script>
