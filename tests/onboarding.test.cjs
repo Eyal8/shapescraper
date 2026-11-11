@@ -61,6 +61,182 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
 }
 const storage = page => page.evaluate(() => ({ ...localStorage }));
 const drop = (page, off) => page.evaluate(off => { __ts.setOff(off); __ts.place(); }, off);
+// Pause before any run so particle counts and the Continue deadline are deterministic.
+async function polishFixture(options = {}, seed = {}) {
+  const f = await fixture({ ss_tut_done: 1, ss_games: 6, ss_best_endless_square: 100, ...seed }, options, true, null, '2026-11-11T12:00:00Z');
+  await f.page.clock.pauseAt('2026-11-11T12:01:00Z');
+  return f;
+}
+async function polishRun(page, score) {
+  await page.evaluate(n => {
+    __ts.start('endless', 'square');
+    for (let i = 0; i < n; i++) { __ts.setOff(0); __ts.place(); }
+  }, score);
+  await page.clock.runFor(4000); // Existing in-play unlock / New Best particles finish first.
+  await drop(page, 6.9);
+  await page.clock.runFor(650);
+}
+
+test('polish: all confetti boundaries wait for final results and share one celebration with unlock/New Best', async () => {
+  const { page, context } = await polishFixture();
+  for (const [score, particles, delayedWaves] of [[0, 0, 0], [9, 0, 0], [10, 8, 0], [24, 8, 0], [25, 24, 0], [49, 24, 0], [50, 32, 1], [99, 32, 1], [100, 52, 2], [104, 52, 2]]) {
+    await polishRun(page, score);
+    if (score >= 10) {
+      assert.equal(await page.locator('#offer').getAttribute('hidden'), null);
+      assert.equal(await page.evaluate(() => __ts.particles), 0, 'failure / Continue does not celebrate');
+      await page.locator('#offerNo').dispatchEvent('click');
+    }
+    assert.equal(await page.locator('#finalScore').textContent(), String(score));
+    assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [particles, delayedWaves], 'single score-tier celebration');
+    await page.clock.runFor(840);
+    assert.ok(await page.evaluate(() => __ts.particles) <= 156, 'bounded result particles');
+    await page.locator('#menuBtn').dispatchEvent('click');
+    await page.clock.runFor(900);
+    assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [0, 0], 'leaving results clears remaining waves');
+  }
+  await context.close();
+});
+
+test('polish: Continue keeps its five-second timer and buyer reward, and final failure celebrates once', async () => {
+  const { page, context } = await polishFixture({}, { ss_noads: 1 });
+  assert.equal(await page.locator('#noAdsBtn').textContent(), 'Ad-free ✓');
+  assert.equal(await page.locator('#noAdsBtn').isDisabled(), true);
+  assert.equal(await page.locator('.menu-footer a').count(), 2);
+  await polishRun(page, 50);
+  assert.equal(await page.locator('#offerCount').textContent(), '5');
+  assert.equal(await page.locator('#offerScore').textContent(), 'Score 50');
+  assert.equal(await page.locator('#offerTip span').textContent(), 'Get a wider block.');
+  await page.locator('#offerYes').dispatchEvent('click');
+  await page.clock.runFor(0);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.equal(await page.evaluate(() => __ts.particles), 0);
+  await drop(page, 6.9);
+  await page.clock.runFor(650);
+  assert.equal(await page.locator('#offer').getAttribute('hidden'), '');
+  assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [32, 1]);
+  await page.locator('#menuBtn').dispatchEvent('click');
+  await polishRun(page, 25);
+  await page.clock.runFor(4900);
+  assert.equal(await page.locator('#over').getAttribute('hidden'), '');
+  await page.clock.runFor(100);
+  assert.equal(await page.locator('#over').getAttribute('hidden'), null, 'offer expires after five seconds');
+  assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [24, 0]);
+  await context.close();
+});
+
+test('polish: score 104 with both New Best and a fresh shape has only three colorful result waves', async () => {
+  const { page, context } = await polishFixture({}, { ss_best_endless_square: 5 });
+  await polishRun(page, 104);
+  await page.locator('#offerNo').dispatchEvent('click');
+  assert.equal(await page.locator('#newBest').getAttribute('hidden'), null);
+  assert.equal(await page.locator('#unlockCard').getAttribute('hidden'), null);
+  assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [52, 2]);
+  await page.clock.runFor(840);
+  assert.equal(await page.evaluate(() => __ts.particles), 156);
+  const clear = await page.evaluate(() => {
+    const c = document.getElementById('fx');
+    const d = c.width / innerWidth;
+    return [...document.querySelectorAll('#over .card, #toggles')].every(el => {
+      const r = el.getBoundingClientRect();
+      const pixels = c.getContext('2d').getImageData(Math.ceil(r.x * d), Math.ceil(r.y * d), Math.floor(r.width * d), Math.floor(r.height * d)).data;
+      return pixels.every((v, i) => i % 4 !== 3 || v === 0);
+    });
+  });
+  assert.equal(clear, true, 'confetti never draws over the result score or controls');
+  await context.close();
+});
+
+test('polish: quick failures clear in-play milestone particles at final results; Daily keeps its own celebration', async () => {
+  const { page, context } = await polishFixture({}, { ss_best_endless_square: 5 });
+  for (const score of [9, 20]) {
+    await page.evaluate(n => {
+      __ts.start('endless', 'square');
+      for (let i = 0; i < n; i++) { __ts.setOff(0); __ts.place(); }
+    }, score);
+    assert.ok(await page.evaluate(() => __ts.particles) > 0, 'existing in-play milestone celebrates');
+    await drop(page, 6.9);
+    await page.clock.runFor(650);
+    if (score >= 10) await page.locator('#offerNo').dispatchEvent('click');
+    assert.equal(await page.evaluate(() => __ts.particles), score < 10 ? 0 : 8, 'final tier replaces earlier particles');
+    await page.locator('#menuBtn').dispatchEvent('click');
+  }
+  await page.evaluate(() => {
+    __ts.playDate('2026-11-11');
+    for (let i = 0; i < 40 && __ts.state === 'playing'; i++) { __ts.setOff(0); __ts.place(); }
+  });
+  assert.equal(await page.evaluate(() => __ts.state), 'over');
+  assert.equal(await page.evaluate(() => __ts.particles), 200, 'Daily still gets its existing completion burst');
+  await page.clock.runFor(1900);
+  assert.equal(await page.locator('#celebrate').getAttribute('hidden'), null);
+  assert.equal(await page.evaluate(() => __ts.resultWaves), 0, 'no additional score-tier waves after Daily completion');
+  assert.ok(await page.evaluate(() => __ts.particles) <= 360, 'shared particle cap');
+  await context.close();
+});
+
+test('polish: Reduced Motion suppresses particles and UI motion, including preference changes mid-celebration', async () => {
+  const { page, context } = await polishFixture({ reducedMotion: 'reduce' });
+  await polishRun(page, 104);
+  await page.locator('#offerNo').dispatchEvent('click');
+  assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [0, 0]);
+  assert.deepEqual(await page.locator('#over').evaluate(e => [getComputedStyle(e).animationName, getComputedStyle(e).transitionDuration]), ['none', '0s']);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.locator('#menuBtn').dispatchEvent('click');
+  await polishRun(page, 104);
+  await page.locator('#offerNo').dispatchEvent('click');
+  assert.equal(await page.evaluate(() => __ts.particles), 52);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.runFor(1000);
+  assert.deepEqual(await page.evaluate(() => [__ts.particles, __ts.resultWaves]), [0, 0]);
+  await context.close();
+});
+
+test('polish: studio light crossfade keeps the logo stationary, lasts 2.14 seconds, and shortens for Reduced Motion', async () => {
+  for (const reducedMotion of ['no-preference', 'reduce']) {
+    const context = await browser.newContext({ viewport: { width: 320, height: 568 }, reducedMotion });
+    const page = await context.newPage();
+    page.on('pageerror', e => errors.push(e.message));
+    await page.clock.install({ time: '2026-11-11T12:00:00Z' });
+    await page.clock.pauseAt('2026-11-11T12:00:00Z');
+    await page.addInitScript(() => {
+      document.addEventListener('intro:done', () => { window.__introDoneAt = performance.now(); });
+      document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('studioIntro');
+        new MutationObserver(() => {
+          if (el.classList.contains('lit') && window.__introStartedAt === undefined) window.__introStartedAt = performance.now();
+        }).observe(el, { attributes: true, attributeFilter: ['class'] });
+      });
+    });
+    await page.goto(url);
+    const initial = await page.locator('#studioIntro').evaluate(e => ({ hidden: e.hidden, lit: e.classList.contains('lit'), background: getComputedStyle(e).backgroundImage }));
+    assert.equal(initial.hidden, false);
+    assert.equal(initial.lit, false, 'first frame retains the native sky before the light begins');
+    assert.ok(initial.background.includes('data:image/png;base64,'), 'native launch artwork is embedded, requiring no network fetch');
+    await page.clock.runFor(40);
+    assert.equal(await page.locator('#studioIntro').evaluate(e => e.classList.contains('lit')), true);
+    const logo = await page.locator('#studioIntro img').boundingBox();
+    if (reducedMotion === 'no-preference') {
+      assert.deepEqual(await page.locator('#studioIntro').evaluate(e => {
+        const s = getComputedStyle(e, '::after'); return [s.animationDuration, s.animationDelay, s.animationTimingFunction];
+      }), ['1.3s', '0.24s', 'cubic-bezier(0.4, 0, 0.2, 1)']);
+      await page.clock.runFor(1500);
+      // Playwright's JS clock does not advance the compositor timeline; seek CSS separately.
+      await page.locator('#studioIntro').evaluate(e => e.getAnimations({ subtree: true }).forEach(a => { a.pause(); a.currentTime = 1540; }));
+      assert.deepEqual(await page.locator('#studioIntro img').boundingBox(), logo, 'logo never scales or moves');
+      assert.equal(await page.locator('#studioIntro').evaluate(e => getComputedStyle(e, '::after').opacity), '1');
+      await page.clock.runFor(700);
+      const duration = await page.evaluate(() => window.__introDoneAt - window.__introStartedAt);
+      assert.ok(duration >= 2130 && duration <= 2160, `intro duration ${duration} ms`);
+    } else {
+      assert.equal(await page.locator('#studioIntro img').evaluate(e => getComputedStyle(e).animationName), 'none');
+      await page.clock.runFor(650);
+    }
+    assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '');
+    assert.equal(await page.evaluate(() => localStorage.getItem('beno74_intro_done')), '1');
+    await page.reload();
+    assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '', 'intro never repeats');
+    await context.close();
+  }
+});
 async function learn(page) {
   await page.waitForFunction(() => __ts.tutorialPhase === 'slice');
   await drop(page, 0.8);
@@ -281,7 +457,7 @@ test('small-screen footer links have 44px targets, open separately, and never st
       assert.equal(await page.evaluate(() => __ts.state), 'menu');
     }
   }
-  const link = page.getByRole('link', { name: 'Privacy Policy', exact: true });
+  const link = page.getByRole('link', { name: 'Privacy', exact: true });
   await link.focus();
   const popupPromise = page.waitForEvent('popup');
   await page.keyboard.press('Enter');
