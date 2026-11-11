@@ -28,17 +28,23 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
     // Exercise the real Capacitor JS facade with a controlled native transport, not real SDK UI.
     window.__nativeCalls = [];
     const pending = {};
+    const listeners = {};
     window.__resolveNative = (key, value) => pending[key](value);
     const info = { canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' };
     window.CapacitorCustomPlatform = { name: config.platform || 'ios' };
     window.Capacitor = {
       PluginHeaders: [
-        { name: 'AdMob', methods: ['requestConsentInfo', 'showConsentForm', 'showPrivacyOptionsForm', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial'].map(name => ({ name, rtype: 'promise' })) },
+        { name: 'AdMob', methods: [...['requestConsentInfo', 'showConsentForm', 'showPrivacyOptionsForm', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial', 'showRewardVideoAd', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] },
         { name: 'NativePurchases', methods: ['addListener', 'getPurchases', 'getProducts'].map(name => ({ name, rtype: 'promise' })) },
         { name: 'SplashScreen', methods: [{ name: 'hide', rtype: 'promise' }] }
       ],
-      nativePromise: async (plugin, method) => {
+      nativeCallback: (plugin, method, options, callback) => {
+        listeners[options.eventName] = callback;
+        return options.eventName;
+      },
+      nativePromise: async (plugin, method, options) => {
         if (plugin === 'NativePurchases') return { purchases: config.purchases || [], products: [] };
+        if (method === 'removeListener') { delete listeners[options.eventName]; return; }
         window.__nativeCalls.push(plugin + '.' + method);
         if (method === 'hide') {
           window.__launchFrame = { intro: !document.getElementById('studioIntro').hidden, canvas: document.getElementById('c').width };
@@ -50,6 +56,17 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
         }
         if (method === 'showConsentForm') return new Promise(r => { pending.form = r; });
         if (method === 'showPrivacyOptionsForm') return new Promise(r => { pending.privacy = r; });
+        if (method === 'initialize' && config.initializePending) return new Promise(r => { pending.initialize = r; });
+        if (method === 'prepareRewardVideoAd') {
+          if (config.noFill) throw Error('no fill');
+          if (config.loadPending && !pending.load) return new Promise(r => { pending.load = r; });
+        }
+        if (method === 'showRewardVideoAd') {
+          if (config.showFailure) throw Error('ad expired');
+          if (config.rewardEarned !== false) listeners.onRewardedVideoAdReward?.({ amount: 1 });
+          listeners.onRewardedVideoAdDismissed?.({});
+          return { amount: config.rewardEarned === false ? 0 : 1 };
+        }
       }
     };
     document.addEventListener('intro:done', () => window.__nativeCalls.push('intro:done'));
@@ -595,6 +612,101 @@ test('Unlock All Shapes entitlement grants access without writing earned progres
   }
 });
 
+// Use the real Continue buttons and native facade; only SDK responses are controlled.
+async function firstRewardedContinue(config = {}) {
+  const f = await fixture({}, {}, true, { infoPending: true, ...config }, '2026-11-12T12:00:00Z');
+  const { page } = f;
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  await page.evaluate(() => __ts.tutorial(false));
+  await page.locator('#skipBtn').dispatchEvent('click');
+  await page.evaluate(() => { for (let i = 0; i < 20; i++) { __ts.setOff(0); __ts.place(); } });
+  assert.equal(await page.evaluate(() => __ts.score), 20);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
+  await drop(page, 6.9);
+  await page.clock.runFor(650);
+  assert.equal(await page.locator('#offer').isVisible(), true);
+  await page.clock.runFor(1000);
+  const count = await page.locator('#offerCount').textContent();
+  await page.locator('#offerYes').dispatchEvent('click');
+  await page.waitForSelector('#privacySetup:not([hidden])');
+  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
+  await page.clock.runFor(6000); // A form can outlast the entire original Continue offer.
+  assert.equal(await page.locator('#offerCount').textContent(), count);
+  assert.equal(await page.locator('#offer').isVisible(), true);
+  assert.equal(await page.locator('#over').isHidden(), true);
+  await page.locator('#offerYes').dispatchEvent('click'); // duplicate input while UMP owns the boundary
+  assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.showConsentForm').length), 1);
+  return f;
+}
+
+test('first-run rewarded Continue: score 20 waits for consent, initialization and loaded reward; no duplicate prompts', async () => {
+  const { page, context } = await firstRewardedContinue({ initializePending: true, loadPending: true });
+  await page.evaluate(() => __resolveNative('form', { canRequestAds: true }));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.initialize'));
+  assert.equal(await page.locator('#privacySetup').textContent(), 'Loading ad…');
+  await page.clock.runFor(2000);
+  assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.prepareRewardVideoAd')), false);
+  await page.evaluate(() => __resolveNative('initialize', {}));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.prepareRewardVideoAd'));
+  await page.clock.runFor(2000);
+  assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showRewardVideoAd')), false);
+  assert.equal(await page.evaluate(() => __ts.state), 'over');
+  await page.evaluate(() => __resolveNative('load', {}));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showRewardVideoAd'));
+  await page.clock.runFor(300);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.equal(await page.evaluate(() => __ts.score), 20, 'Continue resumes the same run');
+  assert.equal(await page.locator('#privacySetup').isHidden(), true);
+  await drop(page, 6.9);
+  await page.clock.runFor(650);
+  assert.equal(await page.locator('#offer').isHidden(), true, 'one Continue per run');
+  assert.equal(await page.locator('#over').isVisible(), true);
+  await page.locator('#againBtn').dispatchEvent('click');
+  await page.waitForFunction(() => __ts.state === 'playing');
+  await page.evaluate(() => { for (let i = 0; i < 20; i++) { __ts.setOff(0); __ts.place(); } });
+  await drop(page, 6.9);
+  await page.clock.runFor(650);
+  await page.locator('#offerYes').dispatchEvent('click');
+  await page.waitForFunction(() => __nativeCalls.filter(c => c === 'AdMob.showRewardVideoAd').length === 2);
+  await page.clock.runFor(300);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  for (const method of ['requestConsentInfo', 'showConsentForm', 'initialize']) {
+    assert.equal(await page.evaluate(m => __nativeCalls.filter(c => c === 'AdMob.' + m).length, method), 1);
+  }
+  assert.equal(await page.evaluate(() => __nativeCalls.some(c => c.includes('TrackingAuthorization'))), false);
+  await context.close();
+});
+
+for (const outcome of ['refused', 'no fill', 'dismissed', 'load timeout', 'show failure']) test(`first-run rewarded Continue: ${outcome} returns to results without a reward or stuck UI`, async () => {
+  const { page, context } = await firstRewardedContinue({ noFill: outcome === 'no fill', rewardEarned: outcome !== 'dismissed', loadPending: outcome === 'load timeout', showFailure: outcome === 'show failure' });
+  await page.evaluate(allowed => __resolveNative('form', { canRequestAds: allowed }), outcome !== 'refused');
+  if (outcome === 'dismissed' || outcome === 'show failure') {
+    await page.waitForFunction(() => __nativeCalls.includes('AdMob.showRewardVideoAd'));
+    await page.clock.runFor(300);
+  } else if (outcome === 'load timeout') {
+    await page.waitForFunction(() => __nativeCalls.includes('AdMob.prepareRewardVideoAd'));
+    await page.clock.runFor(15001);
+  }
+  await page.waitForSelector('#over:not([hidden])');
+  assert.equal(await page.locator('#offer').isHidden(), true);
+  assert.equal(await page.locator('#privacySetup').isHidden(), true);
+  assert.equal(await page.evaluate(() => __ts.state), 'over');
+  assert.equal(await page.evaluate(() => __ts.moving), null, 'no free continuation');
+  if (outcome === 'refused') assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.initialize')), false);
+  if (outcome !== 'dismissed' && outcome !== 'show failure') assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showRewardVideoAd')), false);
+  if (outcome === 'load timeout') {
+    await page.evaluate(() => __resolveNative('load', {}));
+    assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showRewardVideoAd')), false, 'late preload cannot grant or show');
+  }
+  await page.locator('#againBtn').dispatchEvent('click');
+  await page.waitForFunction(() => __ts.state === 'playing');
+  assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
+  assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.showConsentForm').length), 1);
+  await context.close();
+});
+
 test('owner QA: first native tutorial and Skip run stay interactive until the first menu pause', async () => {
   const { page, context } = await fixture({}, {}, false, { infoPending: true });
   await page.waitForSelector('#studioIntro:not([hidden])');
@@ -602,7 +714,7 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
   await page.waitForSelector('#skipBtn:not([hidden])');
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'intro:done']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done']);
   const frame = await page.evaluate(() => __launchFrame);
   assert.equal(frame.intro, true);
   assert.ok(frame.canvas > 0);
@@ -610,9 +722,9 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   await page.mouse.click(180, 320); // The fresh moving block is still outside the tower.
   await page.waitForSelector('#over:not([hidden])');
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'intro:done'], 'results remain unobstructed');
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done'], 'results remain unobstructed');
   await page.locator('#menuBtn').click();
-  await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
+  await page.waitForSelector('#privacySetup:not([hidden])');
   assert.equal(await page.locator('#privacySetup').isVisible(), true);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
   await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
@@ -620,11 +732,11 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
   await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'intro:done', 'AdMob.requestConsentInfo', 'AdMob.showConsentForm']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done', 'AdMob.showConsentForm']);
   await context.close();
 });
 
-test('owner QA: completed native tutorial defers UMP-owned ATT until replay, including a free Continue', async () => {
+test('owner QA: completed native tutorial defers UMP presentation until replay, including a free Continue', async () => {
   const { page, context } = await fixture({}, {}, true, { infoPending: true, purchases: [{ productIdentifier: 'shapescraper_no_ads', purchaseState: 1 }] });
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   await page.evaluate(() => __ts.tutorial(false));
@@ -635,9 +747,9 @@ test('owner QA: completed native tutorial defers UMP-owned ATT until replay, inc
   assert.equal(await page.locator('#coach').evaluate(e => e.classList.contains('show')), false, 'readiness coaching clears at run failure');
   await page.locator('#offerYes').click();
   await page.waitForFunction(() => __ts.state === 'playing');
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await lose(page);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await page.locator('#againBtn').click();
   await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
   assert.equal(await page.evaluate(() => __ts.state), 'over', 'next run waits at the existing results pause');
@@ -649,17 +761,17 @@ test('owner QA: completed native tutorial defers UMP-owned ATT until replay, inc
   assert.equal(await page.evaluate(() => __ts.score), 0);
   await lose(page);
   await page.locator('#menuBtn').click();
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'AdMob.requestConsentInfo', 'AdMob.showConsentForm'], 'no duplicate consent or separate ATT call');
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'AdMob.showConsentForm'], 'no duplicate consent or separate ATT call');
   await context.close();
 });
 
 test('owner QA: quitting after tutorial Skip keeps the unfinished first run protected on relaunch', async () => {
   const { page, context } = await fixture({ ss_tut_done: 1 }, {}, true, { infoPending: true });
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await page.locator('[data-page="endless"] [data-play]').click();
   await lose(page);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await page.locator('#menuBtn').click();
   await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
   await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: false }));
@@ -669,7 +781,7 @@ test('owner QA: quitting after tutorial Skip keeps the unfinished first run prot
 
 test('owner QA: returning native launch explains setup while awaiting the UMP-owned ATT flow', async () => {
   const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 5 }, {}, true, { infoPending: true });
-  await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
+  await page.waitForSelector('#privacySetup:not([hidden])');
   assert.equal(await page.locator('#privacySetup').isVisible(), true);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
   await page.mouse.click(180, 320);
@@ -683,7 +795,7 @@ test('owner QA: returning native launch explains setup while awaiting the UMP-ow
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
   await page.locator('[data-page="endless"] [data-play]').click();
   assert.equal(await page.evaluate(() => __ts.state), 'playing');
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'AdMob.requestConsentInfo', 'AdMob.showConsentForm']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'AdMob.showConsentForm']);
   await context.close();
 });
 
@@ -692,7 +804,7 @@ for (const offline of [false, true]) test(`mock native returning launch: ${offli
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   await page.locator('[data-page="endless"] [data-play]').click();
   assert.equal(await page.evaluate(() => __ts.state), 'playing');
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['SplashScreen.hide', 'AdMob.requestConsentInfo']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await context.close();
 });
 

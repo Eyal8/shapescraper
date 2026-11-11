@@ -775,8 +775,27 @@ window.Ads = (function () {
   let initialized = false;
   let privacyBusy = false;
   let consentGeneration = 0;
-  let startupPromise;
+  let consentInfoPromise, startupPromise, adsStartPromise;
   const loading = { interstitial: null, rewarded: null };
+
+  // Only non-presenting native work is bounded; UMP forms cannot safely be cancelled.
+  async function bounded(promise, ms) {
+    let timer;
+    try {
+      return await Promise.race([promise, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Ad setup timed out')), ms);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  function refreshConsentInfo() {
+    if (!AdMob) return Promise.resolve(null);
+    // Refresh every launch without presenting UI, initializing ads or blocking play.
+    return consentInfoPromise || (consentInfoPromise = bounded(AdMob.requestConsentInfo(), 8000).then(info => {
+      updatePrivacy(info);
+      return info;
+    }).catch(e => { console.warn('Ad consent info unavailable', e); return null; }));
+  }
 
   function updatePrivacy(info) {
     privacyRequired = info.privacyOptionsRequirementStatus === 'REQUIRED';
@@ -788,7 +807,7 @@ window.Ads = (function () {
     canRequestAds = info.canRequestAds === true;
     if (!canRequestAds) return;
     if (!initialized) {
-      await AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' });
+      await bounded(AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' }), 15000);
       initialized = true;
     }
     preload('rewarded');
@@ -799,20 +818,12 @@ window.Ads = (function () {
     if (!AdMob || privacyBusy) return;
     privacyBusy = true;
     try {
-      // A late info response must never launch a form after gameplay has started.
-      // Only this non-presenting request has an app timeout; native forms are not cancellable.
-      let timer;
-      let info;
-      try {
-        info = await Promise.race([AdMob.requestConsentInfo(), new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Consent info timed out')), 8000);
-        })]);
-      } finally { clearTimeout(timer); }
-      updatePrivacy(info); // keep the entry point even if presenting the form fails
+      let info = await refreshConsentInfo();
+      if (!info) return; // fail closed; a late refresh never presents anything on its own
       // Let UMP decide which forms are required, including the iOS IDFA explainer/ATT.
       if (info.isConsentFormAvailable) info = await AdMob.showConsentForm();
       // Ad initialization does not hold gameplay; eligibility still gates every load.
-      startAds(info).catch(e => { canRequestAds = false; console.warn('Ads unavailable', e); });
+      adsStartPromise = startAds(info).catch(e => { canRequestAds = false; console.warn('Ads unavailable', e); });
     } catch (e) {
       // The wrapper rejects without exposing cached SDK eligibility. Fail closed this launch.
       canRequestAds = false;
@@ -829,8 +840,7 @@ window.Ads = (function () {
     loading[kind] = (async () => {
       try {
         const opts = { adId: ids[kind], isTesting: CONFIG.testing };
-        if (kind === 'rewarded') await AdMob.prepareRewardVideoAd(opts);
-        else await AdMob.prepareInterstitial(opts);
+        await bounded(kind === 'rewarded' ? AdMob.prepareRewardVideoAd(opts) : AdMob.prepareInterstitial(opts), 15000);
         if (generation === consentGeneration && canRequestAds) ready[kind] = true;
       } catch (e) {
         if (generation === consentGeneration && canRequestAds) {
@@ -845,7 +855,7 @@ window.Ads = (function () {
   }
 
   // Waits for one of the given plugin events (or a timeout), then cleans up listeners.
-  function waitFor(events, onEvent, timeoutMs) {
+  function waitFor(events, onEvent, timeoutMs, show) {
     return new Promise((resolve) => {
       const subs = [];
       let finished = false;
@@ -862,6 +872,7 @@ window.Ads = (function () {
         }));
       });
       setTimeout(() => finish('timeout'), timeoutMs);
+      if (show) Promise.resolve().then(show).catch(() => finish('failed'));
     });
   }
 
@@ -889,6 +900,8 @@ window.Ads = (function () {
   async function showRewarded(opts) {
     if (adFree() && opts && opts.free) return true;
     if (!AdMob) { const ok = await simulate(5); if (ok) lastRewarded = Date.now(); return ok; }
+    if (!canRequestAds) return false;
+    await adsStartPromise; // Continue may arrive before native initialization finishes.
     if (!canRequestAds || !initialized) return false;
     if (!ready.rewarded) { await preload('rewarded'); if (!ready.rewarded || !canRequestAds) return false; }
     ready.rewarded = false;
@@ -896,9 +909,9 @@ window.Ads = (function () {
     const done = waitFor(
       { onRewardedVideoAdReward: false, onRewardedVideoAdDismissed: true, onRewardedVideoAdFailedToShow: true },
       (name) => { if (name === 'onRewardedVideoAdReward') earned = true; },
-      180000
+      180000,
+      () => AdMob.showRewardVideoAd().then((r) => { if (r && r.amount) earned = true; })
     );
-    AdMob.showRewardVideoAd().then((r) => { if (r && r.amount) earned = true; }).catch(() => {});
     await done;
     preload('rewarded');
     if (earned) lastRewarded = Date.now();
@@ -947,7 +960,7 @@ window.Ads = (function () {
   }
 
   return {
-    startup, showRewarded, maybeInterstitial, showPrivacyOptions,
+    refreshConsentInfo, startup, showRewarded, maybeInterstitial, showPrivacyOptions,
     privacyRequired: () => privacyRequired,
     isOpen: () => privacyBusy || !document.getElementById('adSim').hidden
   };
@@ -2233,10 +2246,12 @@ window.Ads = (function () {
   }
 
   // Shows a rewarded ad; if none could be shown or it was closed early, says so instead of failing silently.
-  async function rewarded(free) {
+  async function rewarded(free, explain) {
     busy = true;
+    if (explain) { $('privacySetup').textContent = 'Loading ad…'; $('privacySetup').hidden = false; }
     let ok = false;
     try { ok = await window.Ads.showRewarded({ free: !!free }); } catch (e) { ok = false; }
+    if (explain) { $('privacySetup').hidden = true; $('privacySetup').textContent = 'Setting up privacy choices…'; }
     busy = false;
     if (!ok) showPopup('No ad available right now. Try again in a moment.', 2200);
     return ok;
@@ -2408,9 +2423,11 @@ window.Ads = (function () {
   }
   async function acceptOffer() {
     if (!offerArgs || busy) return;
-    stopOffer();
-    const ok = await rewarded(true);
-    if (!ok) { setTimeout(declineOffer, 1600); return; }
+    stopOffer(); // An explicit request owns this boundary; the five-second offer cannot expire behind UMP.
+    const free = window.Store && window.Store.noAds();
+    if (!free) await consentAtPause();
+    const ok = await rewarded(true, !free);
+    if (!ok) { declineOffer(); return; }
     offerArgs = null;
     $('offer').hidden = true;
     continued = true;
@@ -2901,6 +2918,7 @@ window.Ads = (function () {
 
   reset();
   renderMenu();
+  window.Ads.refreshConsentInfo(); // Non-presenting UMP refresh; never awaited by onboarding.
   const firstRun = async () => {
     busy = true;
     menuEl.parentElement.inert = true;
