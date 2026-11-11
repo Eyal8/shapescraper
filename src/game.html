@@ -2421,6 +2421,7 @@ window.Ads = (function () {
 
   // ---------- tutorial: coach a Square run, then hand the same tower back to the player ----------
   // Early misses recover without recording a loss. Skip is always available during teaching.
+  const TUT_MISS_HINT = 'Tap when the block is over the tower.';
   // Cancel delayed teaching/recovery effects when Skip replaces the tower.
   function lessonTimeout(fn, ms) {
     const lesson = tut;
@@ -2453,7 +2454,7 @@ window.Ads = (function () {
     const previous = tutorialRun;
     tutorialRun = { practice, prevMode: previous ? previous.prevMode : mode, prevShape: previous ? previous.prevShape : shape, prevDate: previous ? previous.prevDate : runDate };
     { const cur = spin ? spin.to : world.rotation.y; world.rotation.y = Math.round(cur / (Math.PI * 2)) * Math.PI * 2; spin = null; }
-    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, lock: false, timers: [] };
+    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, consecutiveMisses: 0, lock: false, timers: [] };
     trialRun = false;
     mode = 'endless'; shape = 'square'; runDate = null;
     reset();
@@ -2469,12 +2470,14 @@ window.Ads = (function () {
   // the card for the current step
   function tutCard() {
     const t = tut;
-    if (t.phase === 'slice') coach('top', 'Tap anywhere to drop', '');
-    else if (t.phase === 'perfect') coach('low', 'Land 3 Perfects in a row', 'Line it up exactly', t.streak);
+    const hint = t.consecutiveMisses >= 3 ? TUT_MISS_HINT : '';
+    if (t.phase === 'slice') coach('top', 'Tap anywhere to drop', hint);
+    else if (t.phase === 'perfect') coach('low', 'Land 3 Perfects in a row', hint || 'Line it up exactly', t.streak);
   }
 
   function tutAfterDrop(kind) {
     const t = tut;
+    t.consecutiveMisses = 0;
     if (t.phase === 'slice') {
       if (kind === 'slice') {
         t.phase = 'perfect'; t.tol = 0.75; combo = 0; t.streak = 0;
@@ -2523,13 +2526,14 @@ window.Ads = (function () {
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
     t.lock = true; t.streak = 0; combo = 0;
+    t.consecutiveMisses++;
     if (t.phase === 'perfect' && ++t.fails >= 3) t.tol = 1.1;
-    coach('low', 'Missed the tower!', 'In a normal run, that ends the game. Try again!');
+    coach('low', 'Missed the tower!', t.consecutiveMisses >= 3 ? TUT_MISS_HINT : 'In a normal run, that ends the game. Try again!');
     lessonTimeout(() => {
       boostAfterContinue(true);
       state = 'playing'; spawnMoving();
       t.lock = false; tutCard();
-    }, 2000);
+    }, t.consecutiveMisses >= 5 ? 1300 : 2000);
   }
 
   function skipTutorial() {

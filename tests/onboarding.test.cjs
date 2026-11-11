@@ -12,9 +12,10 @@ before(async () => {
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 });
 after(async () => { await browser?.close(); assert.deepEqual(errors, [], 'no page errors'); });
-async function fixture(seed = {}, options = {}, shots = true, native = null) {
+async function fixture(seed = {}, options = {}, shots = true, native = null, clockTime = null) {
   const context = await browser.newContext({ viewport: { width: 360, height: 640 }, ...options });
   const page = await context.newPage();
+  if (clockTime) await page.clock.install({ time: clockTime });
   page.on('pageerror', e => { errors.push(e.message); console.error('Page error:', e.message); });
   page.setDefaultTimeout(8000);
   await page.addInitScript(seed => {
@@ -445,3 +446,83 @@ for (const platform of ['ios', 'android']) test(`mock ${platform} store entitlem
     await context.close();
   }
 });
+
+const missHint = 'Tap when the block is over the tower.';
+async function adaptiveMissFixture(practice, reducedMotion = 'no-preference') {
+  const result = await fixture({}, { reducedMotion }, true, null, '2026-11-11T12:00:00Z');
+  await result.page.clock.pauseAt('2026-11-11T12:01:00Z');
+  await result.page.evaluate(practice => __ts.tutorial(practice), practice);
+  return result;
+}
+async function recoverMiss(page, consecutive) {
+  const before = await page.evaluate(() => ({ score: __ts.score, phase: __ts.tutorialPhase }));
+  await drop(page, 6.9);
+  const delay = consecutive >= 5 ? 1300 : 2000;
+  await page.clock.fastForward(delay - 1);
+  assert.equal(await page.evaluate(() => __ts.state), 'over', 'recovery does not run early');
+  assert.equal(await page.locator('#coach b').textContent(), 'Missed the tower!');
+  assert.equal(await page.locator('#coach span').textContent(), consecutive >= 3 ? missHint : 'In a normal run, that ends the game. Try again!');
+  await page.clock.fastForward(1);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing', `miss ${consecutive} recovers at ${delay}ms`);
+  assert.deepEqual(await page.evaluate(() => ({ score: __ts.score, phase: __ts.tutorialPhase })), before, 'no automatic placement or lesson completion');
+  await page.clock.fastForward(200);
+  assert.equal(await page.locator('#coach span').textContent() === missHint, consecutive >= 3, 'guidance persists on the next attempt');
+}
+
+for (const practice of [false, true]) for (const reducedMotion of ['no-preference', 'reduce']) {
+  test(`adaptive tutorial misses: ${practice ? 'replay' : 'first-time'}, motion=${reducedMotion}`, async () => {
+    const { page, context } = await adaptiveMissFixture(practice, reducedMotion);
+    const before = await storage(page);
+    for (let n = 1; n <= 6; n++) await recoverMiss(page, n);
+    assert.equal(await page.locator('#skipBtn').textContent(), practice ? 'EXIT PRACTICE' : 'SKIP TUTORIAL');
+    assert.equal(await page.locator('#skipBtn').isVisible(), true);
+    assert.deepEqual(await storage(page), before, 'recovery does not record losses or progression');
+
+    await drop(page, 0.8); // successful slice resets complete misses without changing the Perfect lesson
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), 'perfect');
+    for (let n = 1; n <= 3; n++) await recoverMiss(page, n);
+    assert.equal(await page.locator('#coach b').textContent(), 'Land 3 Perfects in a row');
+    assert.equal(await page.locator('#coach .pips3 i.on').count(), 0);
+    await drop(page, 0.9); // existing adaptive Perfect tolerance still applies after repeated failures
+    assert.equal(await page.evaluate(() => __ts.perfects), 1);
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), 'perfect');
+    await recoverMiss(page, 1); // a successful Perfect also resets complete misses
+    assert.deepEqual(await storage(page), before);
+
+    for (let n = 1; n <= 3; n++) {
+      await drop(page, 0.9);
+      assert.equal(await page.evaluate(() => __ts.tutorialPhase), n < 3 ? 'perfect' : 'grown');
+    }
+    await page.clock.fastForward(2000);
+    const completed = await page.evaluate(() => ({ score: __ts.score, moving: __ts.moving.mesh.uuid }));
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), null);
+    await page.clock.fastForward(2500);
+    assert.deepEqual(await page.evaluate(() => ({ score: __ts.score, moving: __ts.moving.mesh.uuid })), completed, 'no recovery can replace the completed tower');
+    assert.equal((await storage(page)).ss_games, undefined);
+    if (practice) assert.deepEqual(await storage(page), before);
+    await context.close();
+  });
+}
+
+for (const practice of [false, true]) for (const exit of ['skip', 'menu']) {
+  test(`adaptive tutorial recovery cancellation: ${practice ? 'replay' : 'first-time'} via ${exit}`, async () => {
+    const { page, context } = await adaptiveMissFixture(practice);
+    for (let n = 1; n <= 4; n++) await recoverMiss(page, n);
+    await drop(page, 6.9); // leave with the fifth miss's shortened timer still pending
+    if (exit === 'skip') await page.locator('#skipBtn').dispatchEvent('click');
+    else await page.evaluate(() => __ts.menu());
+    const afterExit = await page.evaluate(() => ({ state: __ts.state, score: __ts.score, moving: __ts.moving?.mesh.uuid || null }));
+    assert.equal(afterExit.state, exit === 'skip' && !practice ? 'playing' : 'menu');
+    const saved = await storage(page);
+    await page.clock.fastForward(2500);
+    assert.deepEqual(await page.evaluate(() => ({ state: __ts.state, score: __ts.score, moving: __ts.moving?.mesh.uuid || null })), afterExit);
+    assert.deepEqual(await storage(page), saved);
+    assert.equal(await page.evaluate(() => __ts.tutorialPhase), null);
+    assert.equal(await page.locator('#coach').isHidden(), true);
+    assert.equal(saved.ss_games, undefined);
+    // A new lesson must not inherit the miss streak or be touched by the old recovery.
+    await page.evaluate(practice => __ts.tutorial(practice), practice);
+    await recoverMiss(page, 1);
+    await context.close();
+  });
+}
