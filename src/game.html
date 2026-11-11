@@ -19,7 +19,7 @@
   --done: #7cf3c4;
   --warn: #fff1c2;
   --shadow: rgba(20, 24, 40, 0.28);
-  --bg-fallback: #c39ee0;
+  --bg-fallback: #97afef;
   --display: "Unbounded", "Arial Black", system-ui, sans-serif;
   --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --motion-in: 220ms;
@@ -142,19 +142,17 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 .link-btn.loading { opacity: 0.55; text-decoration: none; }
 #studioIntro { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
   /* The build embeds the native launch artwork: no image-fetch or unpainted startup frame. */
-  background: #c39ee0 url("launch-background.png") center / cover no-repeat; transition: opacity var(--motion-out); }
+  background: var(--bg-fallback) url("launch-background.png") center / cover no-repeat; transition: opacity var(--motion-out); }
 html[data-launch-fit="stretch"] #studioIntro { background-size: 100% 100%; }
-#studioIntro::before, #studioIntro::after { content: ''; position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-#studioIntro::before { background: linear-gradient(115deg, #9b6bff, #9aa6f3 45%, #7fe3d6 80%, #b8f5dc); }
+#studioIntro::after { content: ''; position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 #studioIntro::after { background: linear-gradient(125deg, #a17df5, #91c8e8 48%, #9bead5 82%, #b8f5dc); }
-#studioIntro.lit::before { animation: introLight 240ms var(--ease-ui) both; }
 #studioIntro.lit::after { animation: introLight 1300ms cubic-bezier(.4,0,.2,1) 240ms both; }
 #studioIntro img { position: relative; z-index: 1; width: min(62vw, 300px); height: auto; opacity: 0; }
 #studioIntro.lit img { animation: introLight var(--motion-in) var(--ease-ui) both; }
 #studioIntro.out { opacity: 0; }
 @keyframes introLight { to { opacity: 1; } }
-.menu-footer { pointer-events: auto; display: flex; align-items: center; justify-content: center; text-align: center; margin-top: 0; color: #fff; font: 500 10px var(--mono); text-shadow: 0 1px 2px #141728, 0 0 5px #141728; }
-.menu-footer a { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; min-height: 46px; box-sizing: border-box; padding: 0 10px; color: #fff; text-decoration: none; text-shadow: 0 1px 2px #141728, 0 0 5px #141728, 0 0 9px #141728; }
+.menu-footer { pointer-events: auto; display: flex; align-items: center; justify-content: center; text-align: center; margin-top: 0; color: rgba(255,255,255,.92); font: 500 10px var(--mono); text-shadow: 0 1px 2px rgba(20,23,40,.65); }
+.menu-footer a { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; min-height: 46px; box-sizing: border-box; padding: 0 10px; color: inherit; text-decoration: none; text-shadow: inherit; }
 .menu-footer a:focus-visible { outline: 2px solid white; outline-offset: -2px; border-radius: 8px; }
 .credit { font: 500 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
 #noAdsBtn.owned { align-self: center; padding: 5px 8px; border-radius: 999px; background: rgba(20,23,40,.64); color: var(--done); font-size: 10px; opacity: 1; }
@@ -308,13 +306,16 @@ html[data-launch-fit="stretch"] #studioIntro { background-size: 100% 100%; }
 #coach .pips3 i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.7); box-sizing: border-box; }
 #coach .pips3 i.on { background: var(--gold); border-color: var(--gold); }
 #coach:not(:has(span:not(:empty))) b { margin-bottom: 0; }
-#intro { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.35); }
+#intro { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.74); }
 /* Fixed modal exits are visual only; hidden state and input handling change immediately.
    WebViews without discrete transitions fall back to an immediate hide. */
 #intro, #calendar { transition: opacity var(--motion-out), display var(--motion-out) allow-discrete; }
 #intro[hidden], #calendar[hidden] { opacity: 0; }
 #intro[hidden] *, #calendar[hidden] * { pointer-events: none !important; }
-#intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; }
+#intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; background: #24283d; color: #fff; text-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+#introTitle { font-size: 22px; }
+#dailyHelper { margin: 0; font-size: 11px; line-height: 1.4; color: var(--ink-soft); }
+#privacySetup { position: fixed; z-index: 50; top: calc(env(safe-area-inset-top, 0px) + 76px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 48px); box-sizing: border-box; padding: 12px 16px; border-radius: 14px; background: var(--card-strong); color: #fff; text-align: center; font-size: 13px; pointer-events: none; }
 #introBody { display: flex; flex-direction: column; gap: 10px; text-align: center; }
 #intro p { margin: 0; font-size: 14px; line-height: 1.4; }
 /* shine on the Unlock-all offer after a trial run */
@@ -442,7 +443,6 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   button:enabled:active, .menu-footer a:active, #week:active { scale: none; }
   #studioIntro.lit img, #thanks .thanks-shapes svg { opacity: 1; }
   #thanks .thanks-card, #score.bump { transform: none; }
-  #studioIntro.lit::before { opacity: 1; }
 }
 </style>
 
@@ -499,6 +499,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
           <div class="daily-top"><span class="label" id="dailyDate"></span><button type="button" class="link-btn" id="calBtn">Calendar</button></div>
           <div class="daily-goal"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div class="goal-text"><span class="label goal-kicker">Today's shape</span><b id="dailyShape"></b><span id="dailyGoal"></span></div><span class="streak-pill" id="dailyStreak" hidden></span></div>
           <div class="week" id="week" role="button" tabindex="0" aria-label="Open calendar"></div>
+          <p id="dailyHelper">Come back daily to build your streak.</p>
           <button type="button" class="btn gold shine save-streak" data-save-streak hidden></button>
         </div>
         <div class="page-lock" hidden>
@@ -609,7 +610,8 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 
 <div id="corner"><button id="helpBtn" class="tog" type="button" aria-label="How to play" hidden>?</button><button id="skipBtn" class="skip" type="button" hidden>Skip</button></div>
 <div id="coach" hidden aria-live="polite"><b></b><span></span></div>
-<div id="intro" hidden role="dialog" aria-modal="true"><div class="card">
+<div id="privacySetup" hidden role="status">Setting up privacy choices…</div>
+<div id="intro" hidden role="dialog" aria-modal="true" aria-labelledby="introTitle"><div class="card">
   <div class="celebrate-title" id="introTitle"></div>
   <div id="introBody"></div>
   <button type="button" class="btn primary" id="introGo">Got it</button>
@@ -921,8 +923,8 @@ window.Ads = (function () {
     preload('interstitial');
   }
 
-  // The game owns the launch sequence: rendered frame → intro → UMP → interactive play.
-  // Repeated callers share the same launch flow, never a second native presentation.
+  // The game chooses a safe menu/results pause for UMP; first-use play happens before this call.
+  // Repeated callers share the same flow, never a second native presentation.
   function startup() { return startupPromise || (startupPromise = init()); }
   async function showPrivacyOptions() {
     if (!AdMob || privacyBusy || !privacyRequired) return;
@@ -1497,7 +1499,7 @@ window.Ads = (function () {
       const full = top.area >= START_AREA * (runShape === 'square' ? 1 : 0.86) - 1e-6;
       if (combo >= 3 && full) maxed = true;
       if (combo >= 3 && !full) {
-        const grown = Math.min(top.area * (tut ? 1.7 : 1.2), START_AREA * (runShape === 'square' ? 1 : 0.86));
+        const grown = tut ? FULL_AREA() : Math.min(top.area * 1.2, FULL_AREA());
         placed = runShape === 'square' ? widenRect(top, grown) : regular(runShape, grown, top.cx, top.cz);
         grewFrom = top.area;
       }
@@ -1556,8 +1558,11 @@ window.Ads = (function () {
 
   // Animates a freshly placed layer growing from an older footprint to its own (grow-back and continue boost).
   function growIn(layer, fromArea, delay, glow) {
-    const s0 = Math.sqrt(Math.max(0.05, fromArea) / layer.area);
+    const teaching = !!tut && state === 'playing';
+    const s0 = Math.min(teaching ? 0.82 : 1, Math.sqrt(Math.max(0.05, fromArea) / layer.area));
     if (reduceMotion || s0 >= 0.999) return;
+    // Emphasize the freshly placed teaching layer, even after a very small cut.
+    glow = glow || teaching;
     layer.mesh.scale.set(s0, 1, s0);
     grows.push({ mesh: layer.mesh, s0, t: 0, delay: delay || 0, glow: !!glow, dur: glow ? 0.55 : 0.35 });
   }
@@ -1886,7 +1891,7 @@ window.Ads = (function () {
 
   // ---------- one-time intros (first visit to a mode) ----------
   const INTROS = {
-    daily: { title: 'Daily challenge', lines: ['A new shape and goal every day.', 'Land the perfect drops to complete it.', 'Play every day to build your streak.'] }
+    daily: { title: 'Daily challenge', lines: ['A new shape every day.', "Hit today's Perfect target."] }
   };
   function showIntro(k) {
     const it = INTROS[k];
@@ -2224,6 +2229,7 @@ window.Ads = (function () {
     tutorialRun = null;
     $('helpBtn').hidden = false;
     if (!(session && session.practice)) revealHelp();
+    consentAtPause();
   }
 
   // Shows a rewarded ad; if none could be shown or it was closed early, says so instead of failing silently.
@@ -2257,6 +2263,7 @@ window.Ads = (function () {
 
   function gameOver(reason) {
     if (tut) return tutGameOver();
+    hideCoach();
     state = 'over';
     $('hint').hidden = true; hideTip(); $('bestTag').hidden = true;
     overAt = performance.now();
@@ -2485,6 +2492,7 @@ window.Ads = (function () {
   async function playAgain() {
     if (busy) return;
     if (tutorialRun && tutorialRun.practice) { startTutorial(true); return; }
+    await consentAtPause();
     if (trialRun && !isUnlocked(runShape)) {
       // another trial costs another rewarded ad
       if (await rewarded()) start();
@@ -2568,8 +2576,9 @@ window.Ads = (function () {
         t.streak++;
         if (kind === 'grow' || t.streak >= 3) {
           t.phase = 'grown'; t.lock = true;
+          if (moving) moving.mesh.visible = false;
           coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3);
-          lessonTimeout(completeLesson, 2000);
+          lessonTimeout(completeLesson, 1100);
           return;
         }
         coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', t.streak);
@@ -2581,6 +2590,7 @@ window.Ads = (function () {
     if (!tut) return;
     tut.timers.forEach(clearTimeout);
     tut = null; // normal Perfect window, speed and player control resume on this same tower
+    if (moving) moving.mesh.visible = true;
     $('skipBtn').hidden = true;
     if (!tutorialRun.practice) {
       store.set('ss_tut_done', 1);
@@ -2589,7 +2599,7 @@ window.Ads = (function () {
     }
     coach('low', "You're ready! Keep stacking!", 'Miss the tower and the run ends');
     const session = tutorialRun;
-    setTimeout(() => { if (tutorialRun === session) hideCoach(); }, 1800);
+    setTimeout(() => { if (tutorialRun === session) hideCoach(); }, 2800);
     renderBest(); updateSub();
   }
 
@@ -2863,11 +2873,30 @@ window.Ads = (function () {
       get score() { return score; },
       get remainingTime() { return timeLeft; },
       get topArea() { return topLayer().area; },
+      get topScale() { return topLayer().mesh.scale.x; },
       get particles() { return parts.length; },
       get resultWaves() { return resultWaveTimers.length; },
     palette(k) { setPalette(k); },
       timeLeft(v) { timeLeft = v; }
     };
+  }
+
+  // Existing run history keeps incomplete onboarding protected across cold launches.
+  // No consent/ATT presentation or ad request is started during the first teaching/real run.
+  let consentStarted = false;
+  async function consentAtPause() {
+    if (consentStarted || busy || tut || (tutorialRun && tutorialRun.practice) || !(store.get('ss_games', 0) > 0)) return;
+    if (state !== 'menu' && state !== 'over') return;
+    consentStarted = true;
+    busy = true;
+    menuEl.parentElement.inert = true; $('corner').inert = true;
+    $('privacySetup').hidden = false;
+    try { await window.Ads.startup(); }
+    finally {
+      $('privacySetup').hidden = true;
+      menuEl.parentElement.inert = false; $('corner').inert = false;
+      busy = false;
+    }
   }
 
   reset();
@@ -2883,17 +2912,16 @@ window.Ads = (function () {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await window.__hideLaunchScreen();
     if (window.__introPending) await new Promise(playIntro);
-    await window.Ads.startup();
     busy = false;
     menuEl.parentElement.inert = false;
     $('corner').inert = false;
     if (!store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots') startTutorial(false);
-    else { $('helpBtn').hidden = false; revealHelp(); }
+    else { $('helpBtn').hidden = false; revealHelp(); await consentAtPause(); }
   };
   firstRun();
   requestAnimationFrame(frame);
 
-  // 240 ms light-in + 1.3 s crossfade + 440 ms hold + 160 ms exit = 2.14 s.
+  // 240 ms logo entrance + 1.3 s light crossfade + 440 ms hold + 160 ms exit = 2.14 s.
   // First launch only, stationary white logo, tap/keyboard to skip. No sound or ads.
   function playIntro(done) {
     const el = $('studioIntro');
