@@ -264,9 +264,8 @@ button { font: inherit; color: inherit; }
   left: max(16px, env(safe-area-inset-left, 0px));
 }
 #helpBtn { font: 800 20px var(--display); }
-#helpBtn.beckon { animation: beckon 1.2s ease-in-out 1; }
-@keyframes beckon { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,209,102,0); } 45% { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(255,209,102,0.25); } }
-#helpReveal { position: fixed; left: 50%; top: 30%; z-index: 16; pointer-events: none; padding: 14px 20px; border-radius: 22px; background: var(--card-strong); font: 800 16px var(--display); transform: translate(-50%, -50%); }
+#helpBtn.beckon { animation: beckon 1s ease-out 1; }
+@keyframes beckon { 0% { transform: scale(0.85); opacity: 0; } 35% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(255,209,102,0); } 65% { box-shadow: 0 0 0 5px rgba(255,209,102,0.22); } 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(255,209,102,0); } }
 .skip {
   pointer-events: auto; height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer;
   background: var(--card); border: 1px solid var(--card-line); color: var(--ink);
@@ -284,9 +283,6 @@ button { font: inherit; color: inherit; }
 #coach[data-pos="low"] { bottom: calc(env(safe-area-inset-bottom, 0px) + 14%); }
 #coach b { display: block; font: 800 19px/1.15 var(--display); }
 #coach span { display: block; margin-top: 6px; font-size: 13px; line-height: 1.35; opacity: 0.92; }
-#coach .dots { display: flex; justify-content: center; gap: 6px; margin-bottom: 10px; }
-#coach .dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35); }
-#coach .dots i.on { background: var(--gold); }
 #coach .pips3 { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
 #coach .pips3 i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.7); box-sizing: border-box; }
 #coach .pips3 i.on { background: var(--gold); border-color: var(--gold); }
@@ -580,8 +576,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 </div>
 
 <div id="corner"><button id="helpBtn" class="tog" type="button" aria-label="How to play" hidden>?</button><button id="skipBtn" class="skip" type="button" hidden>Skip</button></div>
-<div id="coach" hidden aria-live="polite"><div class="dots"></div><b></b><span></span></div>
-<div id="helpReveal" hidden aria-hidden="true">You're ready!</div>
+<div id="coach" hidden aria-live="polite"><b></b><span></span></div>
 <div id="intro" hidden role="dialog" aria-modal="true"><div class="card">
   <div class="celebrate-title" id="introTitle"></div>
   <div id="introBody"></div>
@@ -597,6 +592,29 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   </div>
 </div>
 
+<script>
+// First launch after install shows the BENO74 Studios intro (BENO74 standard section 11). Players who already
+// played an earlier version never see it.
+window.__introPending = (function () {
+  try {
+    if (location.hash === '#shots' || localStorage.getItem('beno74_intro_done')) return false;
+    if (localStorage.getItem('ss_tut_done') || Number(localStorage.getItem('ss_games') || 0) > 0) { localStorage.setItem('beno74_intro_done', '1'); return false; }
+    return true;
+  } catch (e) { return false; }
+})();
+// Resolve intro visibility before loading the game libraries, so the first HTML paint is intentional.
+if (window.__introPending) document.getElementById('studioIntro').hidden = false;
+let launchHidePromise;
+window.__hideLaunchScreen = () => launchHidePromise || (launchHidePromise = (async () => {
+  try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      await window.capacitorExports.registerPlugin('SplashScreen').hide({ fadeOutDuration: 0 });
+    }
+  } catch (e) { console.warn('Launch screen unavailable', e); }
+})());
+// Release the native screen even if a later script fails. This never starts a consent form.
+setTimeout(window.__hideLaunchScreen, 8000);
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
 <script>
@@ -694,17 +712,7 @@ window.Store = (function () {
   };
 })();
 </script>
-<script>
-// First launch after install shows the BENO74 Studios intro (BENO74 standard section 11). Players who already
-// played an earlier version never see it.
-window.__introPending = (function () {
-  try {
-    if (location.hash === '#shots' || localStorage.getItem('beno74_intro_done')) return false;
-    if (localStorage.getItem('ss_tut_done') || Number(localStorage.getItem('ss_games') || 0) > 0) { localStorage.setItem('beno74_intro_done', '1'); return false; }
-    return true;
-  } catch (e) { return false; }
-})();
-</script>
+
 <script>
 // ---------- Ads: AdMob inside the app, a simulated ad in the browser ----------
 window.Ads = (function () {
@@ -731,6 +739,7 @@ window.Ads = (function () {
   let initialized = false;
   let privacyBusy = false;
   let consentGeneration = 0;
+  let startupPromise;
   const loading = { interstitial: null, rewarded: null };
 
   function updatePrivacy(info) {
@@ -754,11 +763,20 @@ window.Ads = (function () {
     if (!AdMob || privacyBusy) return;
     privacyBusy = true;
     try {
-      let info = await AdMob.requestConsentInfo(); // refresh on every cold launch
+      // A late info response must never launch a form after gameplay has started.
+      // Only this non-presenting request has an app timeout; native forms are not cancellable.
+      let timer;
+      let info;
+      try {
+        info = await Promise.race([AdMob.requestConsentInfo(), new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Consent info timed out')), 8000);
+        })]);
+      } finally { clearTimeout(timer); }
       updatePrivacy(info); // keep the entry point even if presenting the form fails
       // Let UMP decide which forms are required, including the iOS IDFA explainer/ATT.
       if (info.isConsentFormAvailable) info = await AdMob.showConsentForm();
-      await startAds(info);
+      // Ad initialization does not hold gameplay; eligibility still gates every load.
+      startAds(info).catch(e => { canRequestAds = false; console.warn('Ads unavailable', e); });
     } catch (e) {
       // The wrapper rejects without exposing cached SDK eligibility. Fail closed this launch.
       canRequestAds = false;
@@ -869,9 +887,9 @@ window.Ads = (function () {
     preload('interstitial');
   }
 
-  // The first-launch studio intro plays first; consent and tracking prompts come right after it.
-  if (window.__introPending) document.addEventListener('intro:done', init, { once: true });
-  else init();
+  // The game owns the launch sequence: rendered frame → intro → UMP → interactive play.
+  // Repeated callers share the same launch flow, never a second native presentation.
+  function startup() { return startupPromise || (startupPromise = init()); }
   async function showPrivacyOptions() {
     if (!AdMob || privacyBusy || !privacyRequired) return;
     privacyBusy = true;
@@ -893,9 +911,9 @@ window.Ads = (function () {
   }
 
   return {
-    showRewarded, maybeInterstitial, showPrivacyOptions,
+    startup, showRewarded, maybeInterstitial, showPrivacyOptions,
     privacyRequired: () => privacyRequired,
-    isOpen: () => !document.getElementById('adSim').hidden
+    isOpen: () => privacyBusy || !document.getElementById('adSim').hidden
   };
 })();
 </script>
@@ -1368,6 +1386,7 @@ window.Ads = (function () {
   }
 
   function reset() {
+    clearTimeout(popupTimer); popupPriorityUntil = 0; popupEl.classList.remove('show', 'gold');
     while (world.children.length) removeMesh(world.children[0]);
     stack = []; debris = []; rings = []; moving = null;
     score = 0; combo = 0; perfects = 0; bestChain = 0; continued = false; dailyJustDone = false; newlyUnlocked = null;
@@ -1545,8 +1564,10 @@ window.Ads = (function () {
     rings.push({ mesh, t: 0 });
   }
 
-  let popupTimer;
-  function showPopup(text, ms, sub) {
+  let popupTimer, popupPriorityUntil = 0;
+  function showPopup(text, ms, sub, priority = false) {
+    if (!priority && Date.now() < popupPriorityUntil) return;
+    if (priority) popupPriorityUntil = Date.now() + ms;
     popupEl.textContent = text;
     [].concat(sub || []).forEach((t) => { const s2 = document.createElement('small'); s2.textContent = t; popupEl.append(s2); });
     popupEl.classList.add('show');
@@ -1592,7 +1613,7 @@ window.Ads = (function () {
       unlock(next); newlyUnlocked = next;
       // a proper moment: banner with the new shape, confetti, a little fanfare, a success tap
       // light touch during play: confetti and a gold label under the score, nothing covering the tower
-      popupEl.classList.add('gold'); showPopup(SHAPE_NAMES[next] + ' unlocked!', 2200);
+      popupEl.classList.add('gold'); showPopup(SHAPE_NAMES[next] + ' unlocked!', 2200, null, true);
       setTimeout(() => popupEl.classList.remove('gold'), 2500);
       celebrate(false);
       tone(660, 0.22, 'sine', 0.18); setTimeout(() => tone(880, 0.22, 'sine', 0.18), 120); setTimeout(() => tone(1320, 0.35, 'sine', 0.16), 240);
@@ -2113,6 +2134,7 @@ window.Ads = (function () {
     cancelHelpReveal();
     const session = tutorialRun;
     if (session && session.practice) { mode = session.prevMode; shape = session.prevShape; runDate = session.prevDate; }
+    if (tut) tut.timers.forEach(clearTimeout);
     tut = null; hideCoach(); $('skipBtn').hidden = true;
     state = 'menu';
     menuEl.parentElement.classList.add('menu-open');
@@ -2168,6 +2190,7 @@ window.Ads = (function () {
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
     const practice = tutorialRun && tutorialRun.practice;
+    if (!practice && store.get('ss_help_reveal', '') === 'armed') store.set('ss_help_reveal', 'pending');
     if (!practice) gamesPlayed++;
     const wasDailyLocked = !modeUnlocked('daily'), wasTimeLocked = !modeUnlocked('time');
     store.set('ss_games', (store.get('ss_games', 0) || 0) + 1);
@@ -2398,7 +2421,7 @@ window.Ads = (function () {
 
   // ---------- tutorial: coach a Square run, then hand the same tower back to the player ----------
   // Early misses recover without recording a loss. Skip is always available during teaching.
-  const TUT_STEPS = 4;
+  const TUT_MISS_HINT = 'Tap when the block is over the tower.';
   // Cancel delayed teaching/recovery effects when Skip replaces the tower.
   function lessonTimeout(fn, ms) {
     const lesson = tut;
@@ -2407,14 +2430,12 @@ window.Ads = (function () {
     return timer;
   }
   let coachTimer = 0;
-  function coach(pos, title, line, step, pips) {
+  function coach(pos, title, line, pips) {
     const c = $('coach');
     c.classList.remove('show');
     clearTimeout(coachTimer);
     coachTimer = setTimeout(() => {
       c.dataset.pos = pos;
-      const dots = c.querySelector('.dots'); dots.innerHTML = '';
-      for (let i = 1; i <= TUT_STEPS; i++) { const d = document.createElement('i'); if (i <= step) d.className = 'on'; dots.append(d); }
       c.querySelector('b').textContent = title;
       const sp = c.querySelector('span'); sp.textContent = line || ''; sp.hidden = !line;
       c.querySelector('.pips3') && c.querySelector('.pips3').remove();
@@ -2433,7 +2454,7 @@ window.Ads = (function () {
     const previous = tutorialRun;
     tutorialRun = { practice, prevMode: previous ? previous.prevMode : mode, prevShape: previous ? previous.prevShape : shape, prevDate: previous ? previous.prevDate : runDate };
     { const cur = spin ? spin.to : world.rotation.y; world.rotation.y = Math.round(cur / (Math.PI * 2)) * Math.PI * 2; spin = null; }
-    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, lock: false, timers: [] };
+    tut = { tol: 0.06, phase: 'slice', streak: 0, fails: 0, consecutiveMisses: 0, lock: false, timers: [] };
     trialRun = false;
     mode = 'endless'; shape = 'square'; runDate = null;
     reset();
@@ -2441,6 +2462,7 @@ window.Ads = (function () {
     menuEl.parentElement.classList.remove('menu-open');
     menuEl.hidden = true; overEl.hidden = true; $('offer').hidden = true; $('intro').hidden = true; scoreEl.hidden = false;
     $('helpBtn').hidden = true; $('skipBtn').hidden = false; $('sub').hidden = true; $('bestTag').hidden = true; $('hint').hidden = true;
+    $('skipBtn').textContent = practice ? 'EXIT PRACTICE' : 'SKIP TUTORIAL';
     hideTip();
     spawnMoving();
     tutCard();
@@ -2448,42 +2470,46 @@ window.Ads = (function () {
   // the card for the current step
   function tutCard() {
     const t = tut;
-    if (t.phase === 'slice') coach('top', 'Tap anywhere to drop', '', 1);
-    else if (t.phase === 'perfect') coach('low', 'Land 3 Perfects in a row', 'Line it up exactly', 3, t.streak);
+    const hint = t.consecutiveMisses >= 3 ? TUT_MISS_HINT : '';
+    if (t.phase === 'slice') coach('top', 'Tap anywhere to drop', hint);
+    else if (t.phase === 'perfect') coach('low', 'Land 3 Perfects in a row', hint || 'Line it up exactly', t.streak);
   }
 
   function tutAfterDrop(kind) {
     const t = tut;
+    t.consecutiveMisses = 0;
     if (t.phase === 'slice') {
       if (kind === 'slice') {
         t.phase = 'perfect'; t.tol = 0.75; combo = 0; t.streak = 0;
-        coach('low', 'Overhang gets cut', 'Now line it up exactly', 2);
-      } else coach('top', 'Perfect! Nothing cut', 'Try a little off-center to see a cut', 1);
+        coach('low', 'Off-center blocks get sliced', 'The extra part gets cut off.');
+        lessonTimeout(() => { if (tut.phase === 'perfect' && !tut.lock && !tut.streak) tutCard(); }, 1800);
+      } else coach('top', 'Perfect! Nothing cut', 'Try a little off-center to see a cut');
     } else if (t.phase === 'perfect') {
-      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', '3 Perfects in a row', 3, 0); }
+      if (kind === 'slice') { t.streak = 0; if (++t.fails >= 3) t.tol = 1.1; coach('low', 'Almost! Try again', '3 Perfects in a row', 0); }
       else {
         t.streak++;
         if (kind === 'grow' || t.streak >= 3) {
           t.phase = 'grown'; t.lock = true;
-          coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3, 3);
+          coach('top', 'It grew back!', 'Perfects in a row rebuild your tower', 3);
           lessonTimeout(completeLesson, 2000);
           return;
         }
-        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', 3, t.streak);
+        coach('low', t.streak === 1 ? 'Perfect!' : 'Perfect ×' + t.streak, '3 in a row grows it back', t.streak);
       }
     }
   }
 
   function completeLesson() {
     if (!tut) return;
+    tut.timers.forEach(clearTimeout);
     tut = null; // normal Perfect window, speed and player control resume on this same tower
     $('skipBtn').hidden = true;
     if (!tutorialRun.practice) {
       store.set('ss_tut_done', 1);
-      if (!store.get('ss_help_reveal', '')) store.set('ss_help_reveal', 'pending');
+      if (!store.get('ss_help_reveal', '')) store.set('ss_help_reveal', 'armed');
       checkUnlock(true); // Commit any unlock earned during the now-completed lesson.
     }
-    coach('low', "You're ready! Keep stacking!", 'Miss the tower and the run ends', 4);
+    coach('low', "You're ready! Keep stacking!", 'Miss the tower and the run ends');
     const session = tutorialRun;
     setTimeout(() => { if (tutorialRun === session) hideCoach(); }, 1800);
     renderBest(); updateSub();
@@ -2500,12 +2526,14 @@ window.Ads = (function () {
     tone(110, 0.5, 'sawtooth', 0.12);
     buzz([30, 40, 60], 'over');
     t.lock = true; t.streak = 0; combo = 0;
-    coach('low', 'Missed! Try another block', 'Skip any time to return to the menu', 4);
+    t.consecutiveMisses++;
+    if (t.phase === 'perfect' && ++t.fails >= 3) t.tol = 1.1;
+    coach('low', 'Missed the tower!', t.consecutiveMisses >= 3 ? TUT_MISS_HINT : 'In a normal run, that ends the game. Try again!');
     lessonTimeout(() => {
       boostAfterContinue(true);
       state = 'playing'; spawnMoving();
       t.lock = false; tutCard();
-    }, 1200);
+    }, t.consecutiveMisses >= 5 ? 1300 : 2000);
   }
 
   function skipTutorial() {
@@ -2517,17 +2545,14 @@ window.Ads = (function () {
     scoreEl.classList.remove('bump');
     clearTimeout(popupTimer); popupEl.classList.remove('show', 'gold');
     store.set('ss_tut_done', 1);
+    if (!store.get('ss_help_reveal', '')) store.set('ss_help_reveal', 'armed');
     // Discard the instructional tower and start an ordinary, score-zero run.
     mode = 'endless'; shape = 'square'; runDate = null; trialRun = false;
     start();
-    showTip("You're playing for real!", 'ENDLESS · SQUARE', 1500);
+    showTip("You're playing for real!", 'ENDLESS · SQUARE', 2300);
   }
 
-  let helpAnimation = null;
   function cancelHelpReveal() {
-    if (helpAnimation) helpAnimation.cancel();
-    helpAnimation = null;
-    $('helpReveal').hidden = true;
     $('helpBtn').classList.remove('beckon');
   }
   // Consume only on return to the menu: the first results remain completely unobstructed.
@@ -2535,20 +2560,7 @@ window.Ads = (function () {
     if (store.get('ss_help_reveal', '') !== 'pending') return;
     store.set('ss_help_reveal', 'done');
     if (reduceMotion) return;
-    const chip = $('helpReveal'), help = $('helpBtn');
-    chip.hidden = false;
-    const a = chip.getBoundingClientRect(), b = help.getBoundingClientRect();
-    const dx = b.left + b.width / 2 - a.left - a.width / 2, dy = b.top + b.height / 2 - a.top - a.height / 2;
-    const animation = chip.animate([
-      { transform: 'translate(-50%, -50%)', opacity: 1 },
-      { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(0.12)', opacity: 0.2 }
-    ], { duration: 650, easing: 'cubic-bezier(.6,0,.3,1)' });
-    helpAnimation = animation;
-    animation.onfinish = () => {
-      if (helpAnimation !== animation) return;
-      chip.hidden = true; helpAnimation = null;
-      help.classList.add('beckon');
-    };
+    $('helpBtn').classList.add('beckon');
   }
   $('helpBtn').addEventListener('animationend', () => $('helpBtn').classList.remove('beckon'));
   $('skipBtn').addEventListener('click', () => { initAudio(); skipTutorial(); });
@@ -2617,6 +2629,7 @@ window.Ads = (function () {
   // ---------- input ----------
   const scoreEl = $('score'), popupEl = $('popup'), menuEl = $('menu'), overEl = $('over');
   function onTap() {
+    if (busy || window.Ads.isOpen()) return;
     initAudio();
     if (tut && (tut.lock || state !== 'playing')) return;
     if (state === 'menu') onPlay();
@@ -2684,7 +2697,7 @@ window.Ads = (function () {
       if (g.t >= 1) grows.splice(i, 1);
     }
 
-    if (state === 'playing') {
+    if (state === 'playing' && !busy && !window.Ads.isOpen()) {
       if (moving && !(tut && tut.lock)) {
         moving.off += moving.dir * speed() * dt;
         if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
@@ -2770,6 +2783,7 @@ window.Ads = (function () {
       get moving() { return moving; },
       get state() { return state; },
       get score() { return score; },
+      get remainingTime() { return timeLeft; },
       get topArea() { return topLayer().area; },
     palette(k) { setPalette(k); },
       timeLeft(v) { timeLeft = v; }
@@ -2778,11 +2792,25 @@ window.Ads = (function () {
 
   reset();
   renderMenu();
-  const firstRun = () => {
+  const firstRun = async () => {
+    busy = true;
+    menuEl.parentElement.inert = true;
+    $('corner').inert = true;
+    if (window.__introPending) $('studioIntro').hidden = false;
+    // Older versions armed this before a real run ended. Do not reveal early after an update.
+    if (store.get('ss_help_reveal', '') === 'pending' && !(store.get('ss_games', 0) > 0)) store.set('ss_help_reveal', 'armed');
+    // Give the menu/canvas or intro a painted frame before releasing the existing native launch screen.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await window.__hideLaunchScreen();
+    if (window.__introPending) await new Promise(playIntro);
+    await window.Ads.startup();
+    busy = false;
+    menuEl.parentElement.inert = false;
+    $('corner').inert = false;
     if (!store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots') startTutorial(false);
     else { $('helpBtn').hidden = false; revealHelp(); }
   };
-  if (window.__introPending) playIntro(firstRun); else firstRun();
+  firstRun();
   requestAnimationFrame(frame);
 
   // ~1.6 s BENO74 Studios intro, first launch only; a tap skips it. No sound, no ads.
@@ -2792,9 +2820,8 @@ window.Ads = (function () {
     const end = () => {
       if (ended) return; ended = true;
       try { localStorage.setItem('beno74_intro_done', '1'); } catch (e) {}
-      done();
       el.classList.add('out');
-      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); }, reduceMotion ? 0 : 350);
+      setTimeout(() => { el.hidden = true; document.dispatchEvent(new Event('intro:done')); done(); }, reduceMotion ? 0 : 350);
     };
     el.hidden = false;
     el.addEventListener('pointerdown', end, { once: true });

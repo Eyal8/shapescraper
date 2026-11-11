@@ -11,7 +11,7 @@ function deferred() {
   const promise = new Promise(r => { resolve = r; });
   return { promise, resolve };
 }
-function setup(overrides = {}, platform = 'ios') {
+function setup(overrides = {}, platform = 'ios', autoStart = true) {
   const calls = [], timers = [], listeners = {};
   const plugin = {};
   for (const name of ['initialize', 'requestConsentInfo', 'showConsentForm', 'showPrivacyOptionsForm',
@@ -34,7 +34,8 @@ function setup(overrides = {}, platform = 'ios') {
   vm.runInNewContext(source, { window, console: { warn() {} }, Event: class { constructor(type) { this.type = type; } },
     document: { dispatchEvent(e) { events[e.type]?.(); }, addEventListener(n, fn) { events[n] = fn; },
       getElementById: () => ({ hidden: true }) }, localStorage: { getItem: () => '10' },
-    Date, setTimeout(fn, ms) { if (ms === 250) queueMicrotask(fn); else timers.push(fn); } });
+    Date, clearTimeout() {}, setTimeout(fn, ms) { if (ms === 250) queueMicrotask(fn); else timers.push(fn); } });
+  if (autoStart) window.Ads.startup();
   return { ads: window.Ads, calls, timers, window };
 }
 for (const platform of ['ios', 'android']) {
@@ -142,4 +143,43 @@ test('scheduled ad retry respects subsequent privacy revocation', async () => {
   s.timers.forEach(fn => fn());
   await flush();
   assert.equal(s.calls.length, before);
+});
+
+test('startup is explicitly sequenced after intro and runs once', async () => {
+  const form = deferred();
+  const s = setup({ requestConsentInfo: () => info(false, { isConsentFormAvailable: true }),
+    showConsentForm: () => form.promise }, 'ios', false);
+  await flush();
+  assert.deepEqual(s.calls, [], 'no form or ads during the studio intro');
+  const first = s.ads.startup();
+  assert.equal(s.ads.startup(), first);
+  await flush();
+  assert.equal(s.ads.isOpen(), true);
+  assert.deepEqual(s.calls, ['requestConsentInfo', 'showConsentForm']);
+  form.resolve(info(false)); // refusal still completes startup
+  await first;
+  assert.equal(s.ads.isOpen(), false);
+  assert.ok(!s.calls.includes('initialize'));
+});
+test('timed-out consent refresh cannot present a late form or request ads', async () => {
+  const request = deferred();
+  const s = setup({ requestConsentInfo: () => request.promise });
+  s.timers[0](); // request watchdog, before any native presentation
+  await s.ads.startup();
+  request.resolve(info(true, { isConsentFormAvailable: true }));
+  await flush();
+  assert.deepEqual(s.calls, ['requestConsentInfo']);
+  assert.equal(s.ads.isOpen(), false);
+  assert.equal(await s.ads.showRewarded(), false);
+});
+test('ad initialization cannot hold the consent/play boundary indefinitely', async () => {
+  const init = deferred();
+  const s = setup({ initialize: () => init.promise });
+  await s.ads.startup();
+  assert.equal(s.ads.isOpen(), false);
+  assert.equal(await s.ads.showRewarded(), false);
+  assert.deepEqual(s.calls, ['requestConsentInfo', 'initialize']);
+  init.resolve();
+  await flush();
+  assert.ok(s.calls.includes('prepareRewardVideoAd'));
 });

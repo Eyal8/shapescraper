@@ -28,14 +28,18 @@ if (!game.includes('    testing: true,')) throw new Error('ads testing flag not 
 if (realAds) game = game.replace('    testing: true,', '    testing: false,');
 console.log(realAds ? 'Ads: REAL (store build)' : 'Ads: test mode');
 
+// Keep title, fonts and CSS in the head: no unstyled body frame while libraries load.
+const bodyAt = game.indexOf('<canvas id="c"');
+if (bodyAt < 0) throw new Error('Game body not found');
 const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+${game.slice(0, bodyAt)}
 </head>
 <body>
-${game}
+${game.slice(bodyAt)}
 </body>
 </html>
 `;

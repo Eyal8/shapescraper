@@ -2,5 +2,11 @@
   "appId": "com.beno74.shapescraper",
   "appName": "Shapescraper",
   "webDir": "www",
-  "backgroundColor": "#c39ee0"
+  "backgroundColor": "#c39ee0",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "launchFadeOutDuration": 0
+    }
+  }
 }
