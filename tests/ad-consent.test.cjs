@@ -24,6 +24,7 @@ function setup(overrides = {}, platform = 'ios', autoStart = true) {
   plugin.addListener = async (name, fn) => { listeners[name] = fn; return { remove() {} }; };
   plugin.showRewardVideoAd = async () => {
     calls.push('showRewardVideoAd');
+    if (overrides.showRewardVideoAd) return overrides.showRewardVideoAd();
     listeners.onRewardedVideoAdReward({ amount: 1 });
     listeners.onRewardedVideoAdDismissed();
     return { amount: 1 };
@@ -177,9 +178,59 @@ test('ad initialization cannot hold the consent/play boundary indefinitely', asy
   const s = setup({ initialize: () => init.promise });
   await s.ads.startup();
   assert.equal(s.ads.isOpen(), false);
-  assert.equal(await s.ads.showRewarded(), false);
+  const reward = s.ads.showRewarded();
   assert.deepEqual(s.calls, ['requestConsentInfo', 'initialize']);
+  s.timers.at(-1)(); // initialization watchdog; no late initialization may load ads
+  assert.equal(await reward, false);
   init.resolve();
   await flush();
-  assert.ok(s.calls.includes('prepareRewardVideoAd'));
+  assert.ok(!s.calls.includes('prepareRewardVideoAd'));
+});
+
+test('launch refresh is non-presenting and shared with the later consent boundary', async () => {
+  const request = deferred();
+  const s = setup({ requestConsentInfo: () => request.promise }, 'ios', false);
+  const refresh = s.ads.refreshConsentInfo();
+  assert.equal(s.ads.refreshConsentInfo(), refresh);
+  assert.equal(s.ads.isOpen(), false, 'background consent info cannot freeze gameplay');
+  request.resolve(info(false, { isConsentFormAvailable: true }));
+  await refresh;
+  assert.deepEqual(s.calls, ['requestConsentInfo']);
+  await s.ads.startup();
+  assert.equal(s.calls.filter(c => c === 'requestConsentInfo').length, 1);
+  assert.equal(s.calls.filter(c => c === 'showConsentForm').length, 1);
+});
+
+test('reward waits for native initialization and then the shared rewarded preload', async () => {
+  const init = deferred(), load = deferred();
+  const s = setup({ initialize: () => init.promise, prepareRewardVideoAd: () => load.promise });
+  await s.ads.startup();
+  const reward = s.ads.showRewarded();
+  await flush();
+  assert.ok(!s.calls.includes('prepareRewardVideoAd'));
+  init.resolve();
+  await flush();
+  assert.equal(s.calls.filter(c => c === 'prepareRewardVideoAd').length, 1);
+  assert.ok(!s.calls.includes('showRewardVideoAd'));
+  load.resolve();
+  assert.equal(await reward, true);
+  assert.equal(s.calls.filter(c => c === 'initialize').length, 1);
+});
+
+test('rewarded preload timeout returns no reward and cannot show a late ad', async () => {
+  const load = deferred();
+  const s = setup({ prepareRewardVideoAd: () => load.promise });
+  await flush();
+  const reward = s.ads.showRewarded();
+  s.timers[2](); // refresh, initialize, then rewarded preload watchdog
+  assert.equal(await reward, false);
+  load.resolve();
+  await flush();
+  assert.ok(!s.calls.includes('showRewardVideoAd'));
+});
+
+test('native show rejection without an event resolves promptly without a reward', async () => {
+  const s = setup({ showRewardVideoAd: () => { throw Error('ad expired'); } });
+  await flush();
+  assert.equal(await s.ads.showRewarded(), false);
 });

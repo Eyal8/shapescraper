@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Launch screen: average of the menu's first-screen gradient (see BENO74 standard, section 11) -->
-    <color name="splash_background">#C39EE0</color>
+    <!-- Center blue of the studio intro's first gradient; Android 12's system splash uses a solid color. -->
+    <color name="splash_background">#97AFEF</color>
 </resources>
