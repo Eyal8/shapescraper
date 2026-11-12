@@ -19,6 +19,8 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 5c95942d9f67736364700a4d743f3a6a22ab75ea
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
@@ -26,7 +28,14 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build && npx cap sync ios
+      - name: Build and sync exact merged QA source
+        timeout-minutes: 10
+        run: |
+          test "$(git rev-parse HEAD)" = 5c95942d9f67736364700a4d743f3a6a22ab75ea
+          ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build
+          npx cap sync ios
+          cmp www/index.html ios/App/App/public/index.html
+          shasum -a 256 www/index.html ios/App/App/public/index.html
       - name: Install API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -59,6 +68,21 @@ jobs:
             tail -n 40 "$RUNNER_TEMP/archive.log"
             exit 1
           fi
+      - name: Verify and retain compiled QA app
+        run: |
+          QA_APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          cmp www/index.html "$QA_APP/public/index.html"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$QA_APP/Info.plist")" = 1.1
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$QA_APP/Info.plist")" = "$GITHUB_RUN_NUMBER"
+          shasum -a 256 "$QA_APP/public/index.html" "$QA_APP/App"
+          codesign --verify --deep --strict "$QA_APP"
+          ditto -c -k --keepParent "$QA_APP" "$RUNNER_TEMP/shapescraper-ios-qa-app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shapescraper-ios-qa-app
+          path: ${{ runner.temp }}/shapescraper-ios-qa-app.zip
+          retention-days: 7
+          if-no-files-found: error
       - name: Upload to TestFlight
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
