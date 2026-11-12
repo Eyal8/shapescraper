@@ -11,7 +11,7 @@ function deferred() {
   const promise = new Promise(r => { resolve = r; });
   return { promise, resolve };
 }
-function setup(overrides = {}, platform = 'ios', autoStart = true) {
+function setup(overrides = {}, platform = 'ios', autoStart = true, clock = Date) {
   const calls = [], timers = [], listeners = {};
   const plugin = {};
   for (const name of ['initialize', 'requestConsentInfo', 'showConsentForm', 'showPrivacyOptionsForm',
@@ -29,13 +29,18 @@ function setup(overrides = {}, platform = 'ios', autoStart = true) {
     listeners.onRewardedVideoAdDismissed();
     return { amount: 1 };
   };
+  plugin.showInterstitial = async () => {
+    calls.push('showInterstitial');
+    if (overrides.showInterstitial) return overrides.showInterstitial();
+    listeners.interstitialAdDismissed?.();
+  };
   const events = {};
   const window = { Capacitor: { getPlatform: () => platform },
     capacitorExports: { registerPlugin: () => plugin }, Store: { noAds: () => false } };
   vm.runInNewContext(source, { window, console: { warn() {} }, Event: class { constructor(type) { this.type = type; } },
     document: { dispatchEvent(e) { events[e.type]?.(); }, addEventListener(n, fn) { events[n] = fn; },
       getElementById: () => ({ hidden: true }) }, localStorage: { getItem: () => '10' },
-    Date, clearTimeout() {}, setTimeout(fn, ms) { if (ms === 250) queueMicrotask(fn); else timers.push(fn); } });
+    Date: clock, clearTimeout() {}, setTimeout(fn, ms) { if (ms === 250) queueMicrotask(fn); else timers.push(fn); } });
   if (autoStart) window.Ads.startup();
   return { ads: window.Ads, calls, timers, window };
 }
@@ -256,4 +261,16 @@ test('privacy choices during background initialization share a single SDK initia
   init.resolve();
   await changing;
   assert.equal(s.calls.filter(c => c === 'initialize').length, 1);
+});
+
+for (const platform of ['ios', 'android']) test(`${platform}: interstitial show rejection without a dismissal cannot hold replay for two minutes`, async () => {
+  let now = 100000;
+  const s = setup({ showInterstitial: () => { throw Error('ad expired'); } }, platform, true, { now: () => now });
+  await s.ads.startup(); await flush();
+  now += 46000;
+  let finished = false;
+  s.ads.maybeInterstitial(2).then(() => { finished = true; });
+  await flush(); await flush();
+  assert.equal(s.calls.filter(c => c === 'showInterstitial').length, 1);
+  assert.equal(finished, true, 'replay releases after failed show without waiting for the 120-second watchdog');
 });
