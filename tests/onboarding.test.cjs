@@ -52,7 +52,7 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
         if (method === 'removeListener') { delete listeners[options.eventName]; return; }
         window.__nativeCalls.push(plugin + '.' + method);
         if (method === 'hide') {
-          window.__launchFrame = { intro: !document.getElementById('studioIntro').hidden, canvas: document.getElementById('c').width, menu: !document.getElementById('menu').hidden };
+          window.__launchFrame = { launch: !document.getElementById('launchSurface').hidden, canvas: document.getElementById('c').width, menu: !document.getElementById('menu').hidden };
           return;
         }
         if (method === 'requestConsentInfo') {
@@ -74,7 +74,6 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
         }
       }
     };
-    document.addEventListener('intro:done', () => window.__nativeCalls.push('intro:done'));
   }, native);
   await page.goto(url + (shots ? '#shots' : ''));
   if (shots) await page.waitForFunction(() => window.__ts);
@@ -212,60 +211,6 @@ test('polish: Reduced Motion suppresses particles and UI motion, including prefe
   await context.close();
 });
 
-test('polish: studio light crossfade keeps the logo stationary, lasts 2.36 seconds, and shortens for Reduced Motion', async () => {
-  for (const reducedMotion of ['no-preference', 'reduce']) {
-    const context = await browser.newContext({ viewport: { width: 320, height: 568 }, reducedMotion });
-    const page = await context.newPage();
-    page.on('pageerror', e => errors.push(e.message));
-    await page.clock.install({ time: '2026-11-11T12:00:00Z' });
-    await page.clock.pauseAt('2026-11-11T12:00:00Z');
-    await page.addInitScript(() => {
-      document.addEventListener('intro:done', () => { window.__introDoneAt = performance.now(); });
-      document.addEventListener('DOMContentLoaded', () => {
-        const el = document.getElementById('studioIntro');
-        new MutationObserver(() => {
-          if (el.classList.contains('lit') && window.__introStartedAt === undefined) window.__introStartedAt = performance.now();
-          if (el.classList.contains('out')) window.__introExitMenuHidden = document.getElementById('menu').hidden;
-        }).observe(el, { attributes: true, attributeFilter: ['class'] });
-      });
-    });
-    await page.goto(url);
-    const initial = await page.locator('#studioIntro').evaluate(e => ({ hidden: e.hidden, lit: e.classList.contains('lit'), background: getComputedStyle(e).backgroundImage }));
-    assert.equal(initial.hidden, false);
-    assert.equal(initial.lit, false, 'first frame retains the native sky before the light begins');
-    assert.ok(initial.background.includes('data:image/png;base64,'), 'native launch artwork is embedded, requiring no network fetch');
-    assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true, 'tutorial is prepared behind the opaque intro');
-    assert.equal(await page.locator('#skipBtn').isVisible(), true);
-    assert.equal(await page.locator('.hud').evaluate(e => e.inert), true, 'prepared tutorial cannot accept input through the intro');
-    await page.clock.runFor(40);
-    assert.equal(await page.locator('#studioIntro').evaluate(e => e.classList.contains('lit')), true);
-    const logo = await page.locator('#studioIntro img').boundingBox();
-    if (reducedMotion === 'no-preference') {
-      assert.deepEqual(await page.locator('#studioIntro').evaluate(e => {
-        const s = getComputedStyle(e, '::after'); return [s.animationDuration, s.animationDelay, s.animationTimingFunction];
-      }), ['1.3s', '0.24s', 'cubic-bezier(0.4, 0, 0.2, 1)']);
-      await page.clock.runFor(1500);
-      // Playwright's JS clock does not advance the compositor timeline; seek CSS separately.
-      await page.locator('#studioIntro').evaluate(e => e.getAnimations({ subtree: true }).forEach(a => { a.pause(); a.currentTime = 1540; }));
-      assert.deepEqual(await page.locator('#studioIntro img').boundingBox(), logo, 'logo never scales or moves');
-      assert.equal(await page.locator('#studioIntro').evaluate(e => getComputedStyle(e, '::after').opacity), '1');
-      await page.clock.runFor(950);
-      const duration = await page.evaluate(() => window.__introDoneAt - window.__introStartedAt);
-      assert.ok(duration >= 2350 && duration <= 2380, `intro duration ${duration} ms`);
-    } else {
-      assert.equal(await page.locator('#studioIntro img').evaluate(e => getComputedStyle(e).animationName), 'none');
-      await page.clock.runFor(650);
-    }
-    assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '');
-    assert.equal(await page.evaluate(() => __introExitMenuHidden), true, 'no menu is revealed during the exit fade');
-    assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true);
-    assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
-    assert.equal(await page.evaluate(() => localStorage.getItem('beno74_intro_done')), '1');
-    await page.reload();
-    assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '', 'intro never repeats');
-    await context.close();
-  }
-});
 async function learn(page) {
   await page.waitForFunction(() => __ts.tutorialPhase === 'slice');
   await drop(page, 0.8);
@@ -284,6 +229,47 @@ async function lose(page) {
   await page.waitForFunction(() => !document.getElementById('offer').hidden || !document.getElementById('over').hidden);
   if (await page.locator('#offer').isVisible()) await page.locator('#offerNo').click();
 }
+
+for (const mode of ['endless', 'time', 'daily']) test(`launch: ${mode} cold colors are stable without replacing saved selection`, async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 10, ss_best_endless_square: 100, ss_mode2: mode, ss_shape: 'circle', ss_intro_daily: 1 });
+  let first;
+  for (let i = 0; i < 3; i++) {
+    if (i) { await page.reload(); await page.waitForFunction(() => window.__ts && !document.querySelector('.hud').inert); }
+    const current = await page.evaluate(() => ({ mode: __ts.mode, shape: __ts.shape, runShape: __ts.runShape, hue: __ts.hue, tower: __ts.towerColor, background: document.body.style.background }));
+    assert.equal(current.mode, mode); assert.equal(current.shape, 'circle');
+    assert.ok(current.background.includes('--launch-sky'));
+    if (first) assert.deepEqual(current, first); else first = current;
+    assert.equal((await storage(page)).ss_shape, '"circle"');
+  }
+  if (mode === 'daily') {
+    await page.evaluate(() => __ts.start('daily'));
+    assert.equal(await page.evaluate(() => __ts.hue), first.hue, 'Daily keeps its date-derived hue');
+    assert.equal(await page.evaluate(() => __ts.runShape), first.runShape);
+  } else {
+    assert.equal(first.hue, 205);
+    await page.locator(`[data-page="${mode}"] [data-shape="square"][data-copy="1"]`).click();
+    await page.waitForFunction(() => __ts.shape === 'square');
+    assert.equal(await page.evaluate(() => document.body.style.background), '', 'shape selection releases the startup sky');
+  }
+  await context.close();
+});
+
+test('launch: new runs retain random hue variation and stacking retains the hue cycle', async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 10, ss_best_endless_square: 100 });
+  const colors = await page.evaluate(() => {
+    const original = Math.random;
+    Math.random = () => .1; __ts.start('endless', 'circle'); const first = __ts.hue;
+    Math.random = () => .9; __ts.start('endless', 'circle'); const second = __ts.hue;
+    Math.random = original;
+    const tower = [__ts.towerColor];
+    for (let i = 0; i < 2; i++) { __ts.setOff(0); __ts.place(); tower.push(__ts.towerColor); }
+    return { first, second, tower, background: document.body.style.background };
+  });
+  assert.equal(colors.second - colors.first, 40);
+  assert.equal(new Set(colors.tower).size, 3);
+  assert.equal(colors.background, '');
+  await context.close();
+});
 
 for (const reducedMotion of ['no-preference', 'reduce']) test(`owner QA: tutorial grow is visible and resumes in 1.1 seconds; readiness stays readable (${reducedMotion})`, async () => {
   const { page, context } = await fixture({}, { reducedMotion }, true, null, '2026-11-12T12:00:00Z');
@@ -333,23 +319,24 @@ test('owner QA: Daily has a short solid intro, an inline streak helper and no re
   await context.close();
 });
 
-test('fresh launch: skippable intro finishes before the interactive tutorial; returning user reaches menu', async () => {
-  const { page, context } = await fixture({}, {}, false);
-  await page.waitForSelector('#studioIntro.lit');
-  await page.locator('#studioIntro').dispatchEvent('pointerdown');
-  assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true);
-  await page.waitForSelector('#studioIntro[hidden]', { state: 'attached' });
-  await page.waitForSelector('#skipBtn:not([hidden])');
+for (const reducedMotion of ['no-preference', 'reduce']) test(`launch: fresh install reveals the prepared tutorial immediately (${reducedMotion})`, async () => {
+  const { page, context } = await fixture({}, { reducedMotion }, false, { infoPending: true });
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  await page.waitForSelector('#launchSurface[hidden]', { state: 'attached' });
   assert.equal(await page.locator('#menu').isHidden(), true);
+  assert.equal(await page.locator('#skipBtn').isVisible(), true);
+  assert.equal(await page.locator('#studioIntro').count(), 0);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
+  const frame = await page.evaluate(() => __launchFrame);
+  assert.equal(frame.launch, true);
+  assert.equal(frame.menu, false);
   await page.locator('#skipBtn').click();
-  assert.equal(await page.locator('#menu').isHidden(), true);
   assert.equal(await page.locator('#score').textContent(), '0');
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   await page.reload();
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
-  assert.equal(await page.locator('#studioIntro').isHidden(), true);
   assert.equal(await page.locator('#menu').isVisible(), true);
-  assert.equal(await page.locator('#helpBtn').isVisible(), true);
+  assert.equal(await page.locator('#skipBtn').isHidden(), true);
   await context.close();
 });
 
@@ -737,22 +724,20 @@ for (const outcome of ['refused', 'no fill', 'dismissed', 'load timeout', 'show 
 
 test('owner QA: first native tutorial and Skip run stay interactive until the first menu pause', async () => {
   const { page, context } = await fixture({}, {}, false, { infoPending: true });
-  await page.waitForSelector('#studioIntro.lit');
-  await page.locator('#studioIntro').dispatchEvent('pointerdown');
   await page.waitForSelector('#skipBtn:not([hidden])');
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   const frame = await page.evaluate(() => __launchFrame);
-  assert.equal(frame.intro, true);
-  assert.equal(frame.menu, false, 'native splash hands off to an intro with the tutorial already behind it');
+  assert.equal(frame.launch, true);
+  assert.equal(frame.menu, false, 'native splash hands off to the prepared tutorial');
   assert.ok(frame.canvas > 0);
   await page.locator('#skipBtn').click();
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   await page.mouse.click(180, 320); // The fresh moving block is still outside the tower.
   await page.waitForSelector('#over:not([hidden])');
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done'], 'results remain unobstructed');
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide'], 'results remain unobstructed');
   await page.locator('#menuBtn').click();
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
@@ -763,7 +748,7 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
   await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
-  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done', 'AdMob.showConsentForm']);
+  assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'AdMob.showConsentForm']);
   await context.close();
 });
 
@@ -816,10 +801,10 @@ for (const status of ['NOT_REQUIRED', 'OBTAINED', 'UNKNOWN', 'REQUIRED']) test(`
   });
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.deepEqual(await page.evaluate(() => __setupMessages), []);
-  assert.equal(await page.locator('#studioIntro').isHidden(), true);
+  assert.equal(await page.locator('#studioIntro').count(), 0);
   const nativeFrame = await page.evaluate(() => __launchFrame);
   assert.equal(nativeFrame.menu, true, 'menu is painted before native splash dismissal');
-  assert.equal(nativeFrame.intro, false, 'returning launches never replay the studio logo');
+  assert.equal(nativeFrame.launch, true, 'the matching web launch surface is ready before native dismissal');
   assert.ok(nativeFrame.canvas > 0);
   assert.equal(await page.evaluate(() => Ads.isOpen()), false);
   assert.equal(await page.locator('#menu .privacy-btn').isVisible(), true, 'required privacy options remain accessible');

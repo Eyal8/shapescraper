@@ -6,9 +6,15 @@ const www = path.join(root, 'www');
 fs.mkdirSync(www, { recursive: true });
 
 let game = fs.readFileSync(path.join(root, 'src/game.html'), 'utf8');
-// Share the existing native launch gradient with the first intro frame, with no image-fetch gap.
+const launchDesign = require('../assets/launch-design.json');
+game = game.replace('--bg-fallback: #9dbef2;', `--bg-fallback: ${launchDesign.fallback};`)
+  .replace('min(44vw, 44vh, 180px)', `min(${launchDesign.symbolWidthFraction * 100}vw, ${launchDesign.symbolWidthFraction * 100}vh, ${launchDesign.symbolMaxPoints}px)`)
+  .replace('hueBase = coldStart ? 205 :', `hueBase = coldStart ? ${launchDesign.startupHue} :`);
+// Embed the generated native launch background and symbol before the first WebView paint.
 const launchSky = fs.readFileSync(path.join(root, 'ios/App/App/Assets.xcassets/Splash.imageset/Default@1x~universal~anyany.png'));
 game = game.replace('url("launch-background.png")', `url("data:image/png;base64,${launchSky.toString('base64')}")`);
+const launchSymbol = fs.readFileSync(path.join(root, 'assets/launch-symbol.svg'));
+game = game.replace('src="launch-symbol.svg"', `src="data:image/svg+xml;base64,${launchSymbol.toString('base64')}"`);
 const cdn = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
 if (!game.includes(cdn)) throw new Error('three.js CDN tag not found in src/game.html');
 game = game.replace(`<script src="${cdn}"></script>`, '<script src="capacitor.js"></script>\n<script src="three.min.js"></script>');

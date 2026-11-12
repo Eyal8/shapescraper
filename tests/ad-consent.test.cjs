@@ -147,12 +147,12 @@ test('scheduled ad retry respects subsequent privacy revocation', async () => {
   assert.equal(s.calls.length, before);
 });
 
-test('startup is explicitly sequenced after intro and runs once', async () => {
+test('startup is explicitly sequenced at a safe boundary and runs once', async () => {
   const form = deferred();
   const s = setup({ requestConsentInfo: () => info(false, { isConsentFormAvailable: true }),
     showConsentForm: () => form.promise }, 'ios', false);
   await flush();
-  assert.deepEqual(s.calls, [], 'no form or ads during the studio intro');
+  assert.deepEqual(s.calls, [], 'no form or ads before the safe boundary');
   const first = s.ads.startup();
   assert.equal(s.ads.startup(), first);
   await flush();

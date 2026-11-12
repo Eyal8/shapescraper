@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Center blue of the studio intro's first gradient; Android 12's system splash uses a solid color. -->
-    <color name="splash_background">#97AFEF</color>
+    <!-- Generated launch palette center; Android 12 requires a solid system background. -->
+    <color name="splash_background">#9DBEF2</color>
 </resources>
