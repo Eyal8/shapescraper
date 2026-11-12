@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const root = path.join(__dirname, '..');
-const design = require('../assets/launch-design.json');
+// Optional comparison preview: --preview design.json output.png (no production writes).
+const preview = process.argv[2] === '--preview';
+const design = preview ? JSON.parse(fs.readFileSync(process.argv[3])) : require('../assets/launch-design.json');
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const stops = design.background.map(([at, hex]) => [at, rgb(hex)]);
 const crc = data => {
@@ -59,6 +61,10 @@ function png(width, height, symbolWidth = 0, transparent = false) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 6;
   return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+}
+if (preview) {
+  fs.writeFileSync(process.argv[4], png(393, 852, Math.min(393 * design.symbolWidthFraction, design.symbolMaxPoints)));
+  process.exit(0);
 }
 const ios = path.join(root, 'ios/App/App/Assets.xcassets');
 const android = path.join(root, 'android/app/src/main/res');
