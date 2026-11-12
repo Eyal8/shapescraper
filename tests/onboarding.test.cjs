@@ -990,3 +990,133 @@ for (const practice of [false, true]) for (const exit of ['skip', 'menu']) {
     await context.close();
   });
 }
+
+// Final polish: exercise scoring and the real menu gestures without a broad QA sweep.
+async function observeBest(page) {
+  await page.evaluate(() => {
+    window.__bestMilestones = [];
+    new MutationObserver(() => {
+      const text = document.getElementById('popup').textContent;
+      if (/new best!/i.test(text)) __bestMilestones.push(text);
+    }).observe(document.getElementById('popup'), { childList: true, subtree: true });
+  });
+}
+for (const [mode, shape, previous] of [['endless', 'square', 5], ['time', 'circle', 1]]) test(`follow-up: ${mode}/${shape} New Best happens once across Continue and persists results`, async () => {
+  const key = `ss_best_${mode}_${shape}`;
+  const { page, context } = await polishFixture({}, { [key]: previous, ss_noads: 1, ss_allshapes: 1 });
+  await observeBest(page);
+  await page.evaluate(([m, s]) => __ts.start(m, s), [mode, shape]);
+  for (let i = 0; i < 12; i++) await drop(page, 0);
+  assert.equal(await page.locator('#score').textContent(), '12');
+  assert.equal(await page.locator('#bestTag').isHidden(), true);
+  assert.equal(await page.evaluate(() => __bestMilestones.length), 1);
+  await drop(page, 6.9); await page.clock.runFor(650);
+  assert.equal(await page.locator('#offer').isVisible(), true);
+  assert.equal(await page.locator('#offerScore').evaluate(e => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)');
+  assert.equal(await page.locator('#popup').evaluate(e => e.classList.contains('show')), false, 'no stale gameplay badge');
+  await page.locator('#offerYes').dispatchEvent('click'); await page.clock.runFor(0);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.equal(await page.locator('#bestTag').isHidden(), true);
+  if (mode === 'time') await drop(page, 0); // Further scoring after Continue also stays quiet.
+  const final = mode === 'time' ? 13 : 12;
+  assert.equal(await page.evaluate(() => __bestMilestones.length), 1);
+  await drop(page, 6.9); await page.clock.runFor(650);
+  assert.equal(await page.locator('#newBest').isVisible(), true, 'the original record remains new across Continue');
+  assert.equal(JSON.parse((await storage(page))[key]), final);
+  for (const id of ['finalScore', 'finalBest', 'newBest']) {
+    assert.equal(await page.locator('#' + id).evaluate(e => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)');
+  }
+  assert.equal(await page.locator('#over .card').evaluate(e => getComputedStyle(e).backgroundColor === 'rgba(0, 0, 0, 0)'), false);
+  await page.locator('#againBtn').dispatchEvent('click'); await page.clock.runFor(0);
+  for (let i = 0; i < final + 1; i++) await drop(page, 0);
+  assert.equal(await page.evaluate(() => __bestMilestones.length), 2, 'a new run gets one new milestone');
+  await drop(page, 6.9); await page.clock.runFor(650);
+  await page.locator('#offerNo').dispatchEvent('click');
+  assert.equal(await page.locator('#finalScore').textContent(), String(final + 1));
+  assert.equal(await page.locator('#finalBest').textContent(), String(final + 1));
+  assert.equal(JSON.parse((await storage(page))[key]), final + 1);
+  await context.close();
+});
+for (const previous of [19, 20]) test(`follow-up: New Best respects simultaneous/existing shape unlocks at previous best ${previous}`, async () => {
+  const { page, context } = await polishFixture({}, { ss_best_endless_square: previous });
+  await observeBest(page);
+  await page.evaluate(() => __ts.start('endless', 'square'));
+  for (let i = 0; i < previous + 2; i++) await drop(page, 0);
+  const entries = await page.evaluate(() => __bestMilestones);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0], previous === 19 ? 'Circle unlocked!New best!' : 'New best!');
+  assert.equal(await page.locator('#bestTag').isHidden(), true);
+  await context.close();
+});
+
+async function swipeMode(page, dir, target = '#menuCard') {
+  await page.locator(target).dispatchEvent('pointerdown', { clientX: 180, clientY: 400 });
+  await page.locator(target).dispatchEvent('pointerup', { clientX: 180 - dir * 80, clientY: 402 });
+}
+for (const [reducedMotion, unlocked] of [['no-preference', false], ['reduce', false], ['no-preference', true]]) test(`follow-up: circular swipes, ${unlocked ? 'unlocked' : 'locked'} modes, taps and shape ownership (${reducedMotion})`, async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: unlocked ? 10 : 1, ss_modes_unlocked: unlocked ? ['time', 'daily'] : [], ss_intro_daily: 1 }, { reducedMotion });
+  assert.equal(await page.locator('[data-mode="time"]').evaluate(e => e.classList.contains('locked')), !unlocked);
+  assert.equal(await page.locator('[data-mode="daily"]').evaluate(e => e.classList.contains('locked')), !unlocked);
+  for (const dir of [1, -1]) {
+    for (const expected of dir === 1 ? ['time', 'daily', 'endless', 'time', 'daily', 'endless'] : ['daily', 'time', 'endless', 'daily', 'time', 'endless']) {
+      const before = await page.evaluate(() => __ts.mode);
+      await swipeMode(page, dir);
+      assert.equal(await page.evaluate(() => __ts.mode), expected);
+      assert.equal(await page.locator(`[data-mode="${expected}"]`).getAttribute('aria-checked'), 'true');
+      if (Math.abs(['endless', 'time', 'daily'].indexOf(expected) - ['endless', 'time', 'daily'].indexOf(before)) === 2) {
+        const frames = await page.evaluate(() => document.getElementById('track').getAnimations({ subtree: true }).filter(a => a.effect.target.matches('.page')).map(a => ({ page: a.effect.target.dataset.page, frames: a.effect.getKeyframes().map(k => k.transform) })));
+        assert.equal(frames.length, reducedMotion === 'reduce' ? 0 : 2);
+        if (reducedMotion !== 'reduce') {
+          assert.deepEqual(frames.find(f => f.page === expected).frames, [`translateX(${dir * 100}%)`, 'translateX(0px)']);
+          const positions = await page.evaluate(() => {
+            const animations = document.getElementById('track').getAnimations({ subtree: true });
+            animations.forEach(a => a.pause()); animations.forEach(a => { a.currentTime = 130; });
+            return [...document.querySelectorAll('.page')].map(e => ({ page: e.dataset.page, x: e.getBoundingClientRect().x }));
+          });
+          const outgoing = positions.find(p => p.page === before).x, incoming = positions.find(p => p.page === expected).x;
+          assert.ok(dir === 1 ? outgoing < incoming : outgoing > incoming, 'wrap travels in the swipe direction');
+          await page.evaluate(() => document.getElementById('track').getAnimations({ subtree: true }).forEach(a => a.finish()));
+        }
+      }
+      // Complete the short existing transition before the next independent gesture.
+      await page.evaluate(() => document.getElementById('track').getAnimations({ subtree: true }).forEach(a => a.finish()));
+      assert.equal(await page.locator('.page').count(), 3, 'real pages are reused');
+      assert.ok(Math.abs(await page.locator(`[data-page="${expected}"]`).evaluate(e => e.getBoundingClientRect().x) - await page.locator('.pages').evaluate(e => e.getBoundingClientRect().x)) < 1);
+    }
+  }
+  assert.equal(await page.locator('[data-page="daily"] .page-lock').isHidden(), unlocked);
+  assert.equal(await page.locator('[data-page="time"] .page-lock').isHidden(), unlocked);
+  await swipeMode(page, 1, '[data-page="endless"] .shapes');
+  assert.equal(await page.evaluate(() => __ts.mode), 'endless', 'shape gestures keep mode ownership');
+  await page.locator('#menuCard').dispatchEvent('pointerdown', { clientX: 180, clientY: 400 });
+  await page.locator('#menuCard').dispatchEvent('pointerup', { clientX: 140, clientY: 402 });
+  assert.equal(await page.evaluate(() => __ts.mode), 'endless', '45px threshold is unchanged');
+  for (const mode of ['daily', 'time', 'endless']) {
+    await page.locator(`[data-mode="${mode}"]`).click();
+    assert.equal(await page.evaluate(() => __ts.mode), mode);
+  }
+  await page.locator('[data-mode="endless"]').press('ArrowRight');
+  assert.equal(await page.evaluate(() => __ts.mode), 'time');
+  assert.equal(await page.locator('[data-mode="time"]').evaluate(e => e === document.activeElement), true);
+  await page.reload(); await page.waitForFunction(() => window.__ts);
+  assert.equal(await page.evaluate(() => __ts.mode), 'time', 'selection persists');
+  await context.close();
+});
+
+test('follow-up: a repaired Continue tower cannot put a delayed gameplay badge over results', async () => {
+  const { page, context } = await polishFixture({}, { ss_noads: 1 });
+  await page.evaluate(() => { __ts.start('endless', 'square'); for (let i = 0; i < 12; i++) { __ts.setOff(0); __ts.place(); } });
+  const full = await page.evaluate(() => __ts.topArea);
+  await drop(page, 2);
+  assert.equal(await page.evaluate(() => __ts.score), 13);
+  assert.ok(await page.evaluate(() => __ts.topArea) < full / 2, 'thin tower needs repair');
+  await drop(page, 6.9); await page.clock.runFor(650);
+  await page.locator('#offerYes').dispatchEvent('click'); await page.clock.runFor(0);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.ok(await page.evaluate(() => __ts.topArea) >= full * .49, 'Continue actually repairs the thin tower');
+  await drop(page, 6.9); await page.clock.runFor(650);
+  assert.equal(await page.locator('#over').isVisible(), true);
+  assert.equal(await page.locator('#popup').evaluate(e => e.classList.contains('show')), false);
+  assert.equal(await page.locator('#finalScore').textContent(), '13');
+  await context.close();
+});
