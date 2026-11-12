@@ -27,10 +27,15 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
   if (native) await page.addInitScript(config => {
     // Exercise the real Capacitor JS facade with a controlled native transport, not real SDK UI.
     window.__nativeCalls = [];
+    window.__setupMessages = [];
+    document.addEventListener('DOMContentLoaded', () => {
+      const setup = document.getElementById('privacySetup');
+      new MutationObserver(() => { if (!setup.hidden) __setupMessages.push(setup.textContent); }).observe(setup, { attributes: true, childList: true });
+    });
     const pending = {};
     const listeners = {};
     window.__resolveNative = (key, value) => pending[key](value);
-    const info = { canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' };
+    const info = { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' };
     window.CapacitorCustomPlatform = { name: config.platform || 'ios' };
     window.Capacitor = {
       PluginHeaders: [
@@ -47,7 +52,7 @@ async function fixture(seed = {}, options = {}, shots = true, native = null, clo
         if (method === 'removeListener') { delete listeners[options.eventName]; return; }
         window.__nativeCalls.push(plugin + '.' + method);
         if (method === 'hide') {
-          window.__launchFrame = { intro: !document.getElementById('studioIntro').hidden, canvas: document.getElementById('c').width };
+          window.__launchFrame = { intro: !document.getElementById('studioIntro').hidden, canvas: document.getElementById('c').width, menu: !document.getElementById('menu').hidden };
           return;
         }
         if (method === 'requestConsentInfo') {
@@ -207,7 +212,7 @@ test('polish: Reduced Motion suppresses particles and UI motion, including prefe
   await context.close();
 });
 
-test('polish: studio light crossfade keeps the logo stationary, lasts 2.14 seconds, and shortens for Reduced Motion', async () => {
+test('polish: studio light crossfade keeps the logo stationary, lasts 2.36 seconds, and shortens for Reduced Motion', async () => {
   for (const reducedMotion of ['no-preference', 'reduce']) {
     const context = await browser.newContext({ viewport: { width: 320, height: 568 }, reducedMotion });
     const page = await context.newPage();
@@ -220,6 +225,7 @@ test('polish: studio light crossfade keeps the logo stationary, lasts 2.14 secon
         const el = document.getElementById('studioIntro');
         new MutationObserver(() => {
           if (el.classList.contains('lit') && window.__introStartedAt === undefined) window.__introStartedAt = performance.now();
+          if (el.classList.contains('out')) window.__introExitMenuHidden = document.getElementById('menu').hidden;
         }).observe(el, { attributes: true, attributeFilter: ['class'] });
       });
     });
@@ -228,6 +234,9 @@ test('polish: studio light crossfade keeps the logo stationary, lasts 2.14 secon
     assert.equal(initial.hidden, false);
     assert.equal(initial.lit, false, 'first frame retains the native sky before the light begins');
     assert.ok(initial.background.includes('data:image/png;base64,'), 'native launch artwork is embedded, requiring no network fetch');
+    assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true, 'tutorial is prepared behind the opaque intro');
+    assert.equal(await page.locator('#skipBtn').isVisible(), true);
+    assert.equal(await page.locator('.hud').evaluate(e => e.inert), true, 'prepared tutorial cannot accept input through the intro');
     await page.clock.runFor(40);
     assert.equal(await page.locator('#studioIntro').evaluate(e => e.classList.contains('lit')), true);
     const logo = await page.locator('#studioIntro img').boundingBox();
@@ -240,14 +249,17 @@ test('polish: studio light crossfade keeps the logo stationary, lasts 2.14 secon
       await page.locator('#studioIntro').evaluate(e => e.getAnimations({ subtree: true }).forEach(a => { a.pause(); a.currentTime = 1540; }));
       assert.deepEqual(await page.locator('#studioIntro img').boundingBox(), logo, 'logo never scales or moves');
       assert.equal(await page.locator('#studioIntro').evaluate(e => getComputedStyle(e, '::after').opacity), '1');
-      await page.clock.runFor(700);
+      await page.clock.runFor(950);
       const duration = await page.evaluate(() => window.__introDoneAt - window.__introStartedAt);
-      assert.ok(duration >= 2130 && duration <= 2160, `intro duration ${duration} ms`);
+      assert.ok(duration >= 2350 && duration <= 2380, `intro duration ${duration} ms`);
     } else {
       assert.equal(await page.locator('#studioIntro img').evaluate(e => getComputedStyle(e).animationName), 'none');
       await page.clock.runFor(650);
     }
     assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '');
+    assert.equal(await page.evaluate(() => __introExitMenuHidden), true, 'no menu is revealed during the exit fade');
+    assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true);
+    assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
     assert.equal(await page.evaluate(() => localStorage.getItem('beno74_intro_done')), '1');
     await page.reload();
     assert.equal(await page.locator('#studioIntro').getAttribute('hidden'), '', 'intro never repeats');
@@ -323,9 +335,9 @@ test('owner QA: Daily has a short solid intro, an inline streak helper and no re
 
 test('fresh launch: skippable intro finishes before the interactive tutorial; returning user reaches menu', async () => {
   const { page, context } = await fixture({}, {}, false);
-  await page.waitForSelector('#studioIntro:not([hidden])');
+  await page.waitForSelector('#studioIntro.lit');
   await page.locator('#studioIntro').dispatchEvent('pointerdown');
-  assert.equal(await page.locator('#skipBtn').isHidden(), true);
+  assert.equal(await page.locator('#menu').evaluate(e => e.hidden), true);
   await page.waitForSelector('#studioIntro[hidden]', { state: 'attached' });
   await page.waitForSelector('#skipBtn:not([hidden])');
   assert.equal(await page.locator('#menu').isHidden(), true);
@@ -334,6 +346,7 @@ test('fresh launch: skippable intro finishes before the interactive tutorial; re
   assert.equal(await page.locator('#score').textContent(), '0');
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
   await page.reload();
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('#studioIntro').isHidden(), true);
   assert.equal(await page.locator('#menu').isVisible(), true);
   assert.equal(await page.locator('#helpBtn').isVisible(), true);
@@ -628,9 +641,16 @@ async function firstRewardedContinue(config = {}) {
   assert.equal(await page.locator('#offer').isVisible(), true);
   await page.clock.runFor(1000);
   const count = await page.locator('#offerCount').textContent();
+  if (config.infoBeforeContinue) {
+    await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true }));
+    await page.clock.runFor(100);
+    assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showConsentForm')), false, 'late info cannot cover a live Continue offer');
+    assert.equal(await page.locator('#privacySetup').isHidden(), true);
+    assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
+  }
   await page.locator('#offerYes').dispatchEvent('click');
   await page.waitForSelector('#privacySetup:not([hidden])');
-  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
+  if (!config.infoBeforeContinue) await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true }));
   await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   await page.clock.runFor(6000); // A form can outlast the entire original Continue offer.
   assert.equal(await page.locator('#offerCount').textContent(), count);
@@ -640,6 +660,14 @@ async function firstRewardedContinue(config = {}) {
   assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.showConsentForm').length), 1);
   return f;
 }
+
+test('startup: late REQUIRED info preserves the live Continue offer until explicit consent opt-in', async () => {
+  const { page, context } = await firstRewardedContinue({ infoBeforeContinue: true });
+  await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
+  await page.waitForSelector('#over:not([hidden])');
+  assert.equal(await page.locator('#privacySetup').isHidden(), true);
+  await context.close();
+});
 
 test('first-run rewarded Continue: score 20 waits for consent, initialization and loaded reward; no duplicate prompts', async () => {
   const { page, context } = await firstRewardedContinue({ initializePending: true, loadPending: true });
@@ -709,14 +737,16 @@ for (const outcome of ['refused', 'no fill', 'dismissed', 'load timeout', 'show 
 
 test('owner QA: first native tutorial and Skip run stay interactive until the first menu pause', async () => {
   const { page, context } = await fixture({}, {}, false, { infoPending: true });
-  await page.waitForSelector('#studioIntro:not([hidden])');
+  await page.waitForSelector('#studioIntro.lit');
   await page.locator('#studioIntro').dispatchEvent('pointerdown');
   await page.waitForSelector('#skipBtn:not([hidden])');
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
   assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done']);
   const frame = await page.evaluate(() => __launchFrame);
   assert.equal(frame.intro, true);
+  assert.equal(frame.menu, false, 'native splash hands off to an intro with the tutorial already behind it');
   assert.ok(frame.canvas > 0);
   await page.locator('#skipBtn').click();
   assert.equal(await page.locator('#tip b').textContent(), "You're playing for real!");
@@ -724,11 +754,12 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
   await page.waitForSelector('#over:not([hidden])');
   assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide', 'intro:done'], 'results remain unobstructed');
   await page.locator('#menuBtn').click();
-  await page.waitForSelector('#privacySetup:not([hidden])');
+  assert.equal(await page.locator('#privacySetup').isHidden(), true);
+  assert.equal(await page.locator('.hud').evaluate(e => e.inert), false);
+  await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true }));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   assert.equal(await page.locator('#privacySetup').isVisible(), true);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
-  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
-  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   assert.equal(await page.locator('#privacySetup').isHidden(), true);
@@ -737,7 +768,7 @@ test('owner QA: first native tutorial and Skip run stay interactive until the fi
 });
 
 test('owner QA: completed native tutorial defers UMP presentation until replay, including a free Continue', async () => {
-  const { page, context } = await fixture({}, {}, true, { infoPending: true, purchases: [{ productIdentifier: 'shapescraper_no_ads', purchaseState: 1 }] });
+  const { page, context } = await fixture({}, {}, true, { purchases: [{ productIdentifier: 'shapescraper_no_ads', purchaseState: 1 }] });
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   await page.evaluate(() => __ts.tutorial(false));
   await learn(page);
@@ -751,10 +782,8 @@ test('owner QA: completed native tutorial defers UMP presentation until replay, 
   await lose(page);
   assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await page.locator('#againBtn').click();
-  await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
-  assert.equal(await page.evaluate(() => __ts.state), 'over', 'next run waits at the existing results pause');
+  assert.equal(await page.evaluate(() => __ts.state), 'over', 'a required form holds only the results boundary');
   assert.equal(await page.locator('#privacySetup').isVisible(), true);
-  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
   await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
   await page.waitForFunction(() => __ts.state === 'playing');
@@ -774,20 +803,77 @@ test('owner QA: quitting after tutorial Skip keeps the unfinished first run prot
   assert.deepEqual(await page.evaluate(() => __nativeCalls), ['AdMob.requestConsentInfo', 'SplashScreen.hide']);
   await page.locator('#menuBtn').click();
   await page.waitForFunction(() => __nativeCalls.includes('AdMob.requestConsentInfo'));
-  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: false }));
+  await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: false }));
   await page.waitForFunction(() => !document.querySelector('.hud').inert);
   await context.close();
 });
 
-test('owner QA: returning native launch explains setup while awaiting the UMP-owned ATT flow', async () => {
+for (const status of ['NOT_REQUIRED', 'OBTAINED', 'UNKNOWN', 'REQUIRED']) test(`startup: returning ${status} stays interactive without a required available form`, async () => {
+  const eligible = status === 'NOT_REQUIRED' || status === 'OBTAINED';
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 5 }, {}, true, {
+    initializePending: true,
+    info: { status, canRequestAds: eligible, isConsentFormAvailable: status !== 'REQUIRED' }
+  });
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  assert.deepEqual(await page.evaluate(() => __setupMessages), []);
+  assert.equal(await page.locator('#studioIntro').isHidden(), true);
+  const nativeFrame = await page.evaluate(() => __launchFrame);
+  assert.equal(nativeFrame.menu, true, 'menu is painted before native splash dismissal');
+  assert.equal(nativeFrame.intro, false, 'returning launches never replay the studio logo');
+  assert.ok(nativeFrame.canvas > 0);
+  assert.equal(await page.evaluate(() => Ads.isOpen()), false);
+  assert.equal(await page.locator('#menu .privacy-btn').isVisible(), true, 'required privacy options remain accessible');
+  await page.locator('[data-page="endless"] [data-play]').click();
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  if (eligible) {
+    await page.waitForFunction(() => __nativeCalls.includes('AdMob.initialize'));
+    await page.evaluate(() => __resolveNative('initialize', {}));
+  }
+  assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showConsentForm')), false);
+  assert.equal(await page.evaluate(() => Ads.privacyRequired()), true, 'privacy entry remains required independently of form status');
+  assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.requestConsentInfo').length), 1);
+  await context.close();
+});
+
+for (const entry of ['menu Play', 'results replay']) test(`startup: late REQUIRED info after ${entry} waits for the next menu boundary`, async () => {
   const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 5 }, {}, true, { infoPending: true });
-  await page.waitForSelector('#privacySetup:not([hidden])');
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  assert.deepEqual(await page.evaluate(() => __setupMessages), []);
+  await page.locator('[data-page="endless"] [data-play]').click();
+  if (entry === 'results replay') {
+    await lose(page);
+    await page.locator('#againBtn').click();
+    await page.waitForFunction(() => __ts.state === 'playing');
+  }
+  await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' }));
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => __ts.state), 'playing');
+  assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.showConsentForm')), false);
+  assert.equal(await page.evaluate(() => __nativeCalls.includes('AdMob.initialize')), false);
+  assert.deepEqual(await page.evaluate(() => __setupMessages), []);
+  await lose(page);
+  await page.locator('#menuBtn').click();
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
+  assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
+  await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  await page.locator('[data-page="endless"] [data-play]').click();
+  await lose(page);
+  await page.locator('#menuBtn').click();
+  assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.showConsentForm').length), 1);
+  assert.equal(await page.evaluate(() => __nativeCalls.filter(c => c === 'AdMob.requestConsentInfo').length), 1);
+  await context.close();
+});
+
+test('startup: returning launch stays silent until REQUIRED info arrives at the menu boundary', async () => {
+  const { page, context } = await fixture({ ss_tut_done: 1, ss_games: 5 }, {}, true, { infoPending: true });
+  await page.waitForFunction(() => !document.querySelector('.hud').inert);
+  assert.equal(await page.locator('#privacySetup').isHidden(), true);
+  assert.equal(await page.evaluate(() => __ts.state), 'menu');
+  await page.evaluate(() => __resolveNative('info', { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true }));
+  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   assert.equal(await page.locator('#privacySetup').isVisible(), true);
   assert.equal(await page.locator('.hud').evaluate(e => e.inert), true);
-  await page.mouse.click(180, 320);
-  assert.equal(await page.evaluate(() => __ts.state), 'menu');
-  await page.evaluate(() => __resolveNative('info', { canRequestAds: false, isConsentFormAvailable: true }));
-  await page.waitForFunction(() => __nativeCalls.includes('AdMob.showConsentForm'));
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(() => __ts.state), 'menu');
   await page.evaluate(() => __resolveNative('form', { canRequestAds: false }));

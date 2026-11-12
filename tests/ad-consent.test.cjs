@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const html = readFileSync('src/game.html', 'utf8');
 const source = html.slice(html.indexOf('window.Ads ='), html.indexOf('</script>', html.indexOf('window.Ads =')));
-const info = (canRequestAds, extra = {}) => ({ canRequestAds, privacyOptionsRequirementStatus: 'REQUIRED', ...extra });
+const info = (canRequestAds, extra = {}) => ({ status: canRequestAds ? 'NOT_REQUIRED' : 'REQUIRED', canRequestAds, privacyOptionsRequirementStatus: 'REQUIRED', ...extra });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
   let resolve;
@@ -49,7 +49,7 @@ for (const platform of ['ios', 'android']) {
     assert.equal(s.ads.privacyRequired(), true);
   });
   test(`${platform}: form completes before SDK initialization; UMP owns ATT`, async () => {
-    const s = setup({ requestConsentInfo: () => info(false, { status: 'NOT_REQUIRED', isConsentFormAvailable: true }),
+    const s = setup({ requestConsentInfo: () => info(false, { status: 'REQUIRED', isConsentFormAvailable: true }),
       showConsentForm: () => info(true) }, platform);
     await flush();
     assert.deepEqual(s.calls, ['requestConsentInfo', 'showConsentForm', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial']);
@@ -58,6 +58,7 @@ for (const platform of ['ios', 'android']) {
 test('pending consent cannot be bypassed by a rewarded action', async () => {
   const pending = deferred();
   const s = setup({ requestConsentInfo: () => pending.promise });
+  assert.equal(s.ads.isOpen(), false, 'fetching consent info is not a native dialog');
   assert.equal(await s.ads.showRewarded(), false);
   pending.resolve(info(true));
   await flush();
@@ -65,7 +66,7 @@ test('pending consent cannot be bypassed by a rewarded action', async () => {
 });
 for (const method of ['requestConsentInfo', 'showConsentForm', 'initialize']) {
   test(`${method} error disables ads and preserves buyer free rewards`, async () => {
-    const s = setup({ requestConsentInfo: () => info(true, { isConsentFormAvailable: true }),
+    const s = setup({ requestConsentInfo: () => info(true, { status: 'REQUIRED', isConsentFormAvailable: true }),
       [method]: () => { throw Error('offline or unavailable'); } });
     await flush();
     assert.equal(await s.ads.showRewarded(), false);
@@ -233,4 +234,26 @@ test('native show rejection without an event resolves promptly without a reward'
   const s = setup({ showRewardVideoAd: () => { throw Error('ad expired'); } });
   await flush();
   assert.equal(await s.ads.showRewarded(), false);
+});
+
+for (const status of ['NOT_REQUIRED', 'OBTAINED', 'UNKNOWN']) test(`${status}: form availability alone never presents a dialog`, async () => {
+  const s = setup({ requestConsentInfo: () => info(status !== 'UNKNOWN', { status, isConsentFormAvailable: true }) });
+  await s.ads.startup();
+  await flush();
+  assert.ok(!s.calls.includes('showConsentForm'));
+  assert.equal(s.ads.isOpen(), false);
+  assert.equal(s.calls.includes('initialize'), status !== 'UNKNOWN');
+});
+
+test('privacy choices during background initialization share a single SDK initialization', async () => {
+  const init = deferred();
+  const s = setup({ initialize: () => init.promise });
+  await s.ads.startup();
+  assert.equal(s.ads.isOpen(), false);
+  const changing = s.ads.showPrivacyOptions();
+  await flush();
+  assert.equal(s.calls.filter(c => c === 'initialize').length, 1);
+  init.resolve();
+  await changing;
+  assert.equal(s.calls.filter(c => c === 'initialize').length, 1);
 });

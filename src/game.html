@@ -775,7 +775,7 @@ window.Ads = (function () {
   let initialized = false;
   let privacyBusy = false;
   let consentGeneration = 0;
-  let consentInfoPromise, startupPromise, adsStartPromise;
+  let consentInfo, consentInfoPromise, startupPromise, adsStartPromise, initializePromise;
   const loading = { interstitial: null, rewarded: null };
 
   // Only non-presenting native work is bounded; UMP forms cannot safely be cancelled.
@@ -792,6 +792,7 @@ window.Ads = (function () {
     if (!AdMob) return Promise.resolve(null);
     // Refresh every launch without presenting UI, initializing ads or blocking play.
     return consentInfoPromise || (consentInfoPromise = bounded(AdMob.requestConsentInfo(), 8000).then(info => {
+      consentInfo = info; // Current launch's SDK response only; no custom persistence.
       updatePrivacy(info);
       return info;
     }).catch(e => { console.warn('Ad consent info unavailable', e); return null; }));
@@ -807,7 +808,7 @@ window.Ads = (function () {
     canRequestAds = info.canRequestAds === true;
     if (!canRequestAds) return;
     if (!initialized) {
-      await bounded(AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' }), 15000);
+      await (initializePromise || (initializePromise = bounded(AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' }), 15000)));
       initialized = true;
     }
     preload('rewarded');
@@ -816,12 +817,14 @@ window.Ads = (function () {
 
   async function init() {
     if (!AdMob || privacyBusy) return;
-    privacyBusy = true;
     try {
       let info = await refreshConsentInfo();
       if (!info) return; // fail closed; a late refresh never presents anything on its own
       // Let UMP decide which forms are required, including the iOS IDFA explainer/ATT.
-      if (info.isConsentFormAvailable) info = await AdMob.showConsentForm();
+      if (info.status === 'REQUIRED' && info.isConsentFormAvailable) {
+        privacyBusy = true;
+        info = await AdMob.showConsentForm();
+      }
       // Ad initialization does not hold gameplay; eligibility still gates every load.
       adsStartPromise = startAds(info).catch(e => { canRequestAds = false; console.warn('Ads unavailable', e); });
     } catch (e) {
@@ -961,6 +964,7 @@ window.Ads = (function () {
 
   return {
     refreshConsentInfo, startup, showRewarded, maybeInterstitial, showPrivacyOptions,
+    consentInfo: () => consentInfo,
     privacyRequired: () => privacyRequired,
     isOpen: () => privacyBusy || !document.getElementById('adSim').hidden
   };
@@ -2425,7 +2429,15 @@ window.Ads = (function () {
     if (!offerArgs || busy) return;
     stopOffer(); // An explicit request owns this boundary; the five-second offer cannot expire behind UMP.
     const free = window.Store && window.Store.noAds();
-    if (!free) await consentAtPause();
+    if (!free) {
+      // This opt-in results action may wait for info; ordinary launch/menu work never does.
+      busy = true;
+      $('privacySetup').textContent = 'Loading ad…'; $('privacySetup').hidden = false;
+      await window.Ads.refreshConsentInfo();
+      busy = false;
+      $('privacySetup').hidden = true; $('privacySetup').textContent = 'Setting up privacy choices…';
+      await consentAtPause();
+    }
     const ok = await rewarded(true, !free);
     if (!ok) { declineOffer(); return; }
     offerArgs = null;
@@ -2904,26 +2916,38 @@ window.Ads = (function () {
   async function consentAtPause() {
     if (consentStarted || busy || tut || (tutorialRun && tutorialRun.practice) || !(store.get('ss_games', 0) > 0)) return;
     if (state !== 'menu' && state !== 'over') return;
+    const info = window.Ads.consentInfo();
+    if (!info) return; // A pending/offline refresh must not hold menu or replay input.
     consentStarted = true;
-    busy = true;
-    menuEl.parentElement.inert = true; $('corner').inert = true;
-    $('privacySetup').hidden = false;
+    const presenting = info.status === 'REQUIRED' && info.isConsentFormAvailable;
+    if (presenting) {
+      busy = true;
+      menuEl.parentElement.inert = true; $('corner').inert = true;
+      $('privacySetup').hidden = false;
+    }
     try { await window.Ads.startup(); }
     finally {
-      $('privacySetup').hidden = true;
-      menuEl.parentElement.inert = false; $('corner').inert = false;
-      busy = false;
+      if (presenting) {
+        $('privacySetup').hidden = true;
+        menuEl.parentElement.inert = false; $('corner').inert = false;
+        busy = false;
+      }
     }
   }
 
   reset();
   renderMenu();
-  window.Ads.refreshConsentInfo(); // Non-presenting UMP refresh; never awaited by onboarding.
+  // Re-check the actual boundary when the silent response arrives, not the one at launch.
+  window.Ads.refreshConsentInfo().then(() => {
+    if (state === 'menu' || (state === 'over' && !overEl.hidden)) consentAtPause();
+  });
   const firstRun = async () => {
     busy = true;
     menuEl.parentElement.inert = true;
     $('corner').inert = true;
     if (window.__introPending) $('studioIntro').hidden = false;
+    const teaching = !store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots';
+    if (teaching) startTutorial(false); // Prepare behind the opaque intro, before its exit fade.
     // Older versions armed this before a real run ended. Do not reveal early after an update.
     if (store.get('ss_help_reveal', '') === 'pending' && !(store.get('ss_games', 0) > 0)) store.set('ss_help_reveal', 'armed');
     // Give the menu/canvas or intro a painted frame before releasing the existing native launch screen.
@@ -2933,13 +2957,12 @@ window.Ads = (function () {
     busy = false;
     menuEl.parentElement.inert = false;
     $('corner').inert = false;
-    if (!store.get('ss_tut_done', 0) && !(store.get('ss_games', 0) > 0) && location.hash !== '#shots') startTutorial(false);
-    else { $('helpBtn').hidden = false; revealHelp(); await consentAtPause(); }
+    if (!teaching) { $('helpBtn').hidden = false; revealHelp(); consentAtPause(); }
   };
   firstRun();
   requestAnimationFrame(frame);
 
-  // 240 ms logo entrance + 1.3 s light crossfade + 440 ms hold + 160 ms exit = 2.14 s.
+  // 240 ms logo entrance + 1.3 s light crossfade + 660 ms hold + 160 ms exit = 2.36 s.
   // First launch only, stationary white logo, tap/keyboard to skip. No sound or ads.
   function playIntro(done) {
     const el = $('studioIntro');
@@ -2958,7 +2981,7 @@ window.Ads = (function () {
     el.classList.add('lit');
     el.addEventListener('pointerdown', end, { once: true });
     window.addEventListener('keydown', skipKey);
-    timer = setTimeout(end, reduceMotion ? 600 : 1980);
+    timer = setTimeout(end, reduceMotion ? 600 : 2200);
   }
 })();
 </script>
