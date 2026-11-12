@@ -915,8 +915,7 @@ window.Ads = (function () {
     if (!canRequestAds || !initialized) return;
     if (!ready.interstitial) { preload('interstitial'); return; }
     ready.interstitial = false;
-    const done = waitFor({ interstitialAdDismissed: true, interstitialAdFailedToShow: true }, null, 120000);
-    AdMob.showInterstitial().catch(() => {});
+    const done = waitFor({ interstitialAdDismissed: true, interstitialAdFailedToShow: true }, null, 120000, () => AdMob.showInterstitial());
     await done;
     preload('interstitial');
   }
@@ -1911,13 +1910,39 @@ window.Ads = (function () {
   // ---------- shape carousel: the chosen shape sits in the middle; swipe or tap to move ----------
   const pickers = document.querySelectorAll('[data-picker]');
   const leftFor = (p, el) => el.offsetLeft - (p.clientWidth - el.offsetWidth) / 2;
+  let menuGeneration = 0;
+  const canSelect = (p) => state === 'menu' && !busy && !window.Ads.isOpen() && p.closest('.page').dataset.page === mode;
+  // End menu ownership before changing modes or starting any run. Pending native
+  // scrolls resolve from their current centre; a tapped target is already committed.
+  function finishMenuSelection() {
+    const p = pageEl(mode).querySelector('[data-picker]');
+    if (p && !p._animating && (p._scrolling || (p._drag && p._drag.moved))) {
+      const n = nearest(p);
+      if (n) selectShape(n.dataset.shape);
+    }
+    cancelMenuNavigation();
+  }
+  function cancelMenuNavigation() {
+    menuGeneration++;
+    swipe = null;
+    modeSlides.forEach(a => a.cancel()); modeSlides = [];
+    pickers.forEach(p => {
+      cancelAnimationFrame(p._raf); clearTimeout(p._settleTimer);
+      p._animating = p._scrolling = p._gesture = p._suppressClick = false;
+      p._drag = null;
+      p._programmatic = true;
+      centerOn(p, shape, false);
+    });
+  }
   // Our own eased slide (browsers' smooth scrolling fights with scroll snapping and differs between platforms).
   function animateTo(p, left, done) {
     cancelAnimationFrame(p._raf);
     p._animating = true;
     p.style.scrollSnapType = 'none';
+    const generation = menuGeneration;
     const from = p.scrollLeft, t0 = performance.now(), dur = reduceMotion ? 1 : 260;
     const step = (now) => {
+      if (generation !== menuGeneration || state !== 'menu' || p.closest('.page').dataset.page !== mode) return;
       const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
       p.scrollLeft = from + (left - from) * e;
       styleCarousel(p);
@@ -1931,16 +1956,20 @@ window.Ads = (function () {
   function centerOn(scroller, s, smooth, target) {
     const el = target || scroller.querySelector('[data-shape="' + s + '"][data-copy="1"]');
     if (!el) return;
-    if (smooth) animateTo(scroller, leftFor(scroller, el), () => settle(scroller));
+    if (smooth) animateTo(scroller, leftFor(scroller, el), () => {
+      // Completion is visual only. It must never select/reset a live run.
+      scroller._programmatic = true;
+      centerOn(scroller, s, false);
+      styleCarousel(scroller);
+    });
     else { cancelAnimationFrame(scroller._raf); scroller._animating = false; scroller.style.scrollSnapType = ''; scroller.scrollLeft = leftFor(scroller, el); }
   }
   // After a swipe, drag or slide ends: wrap a clone back to the middle copy and select the centred shape.
   function settle(p) {
-    if (p.closest('.page').dataset.page !== mode) return;
+    if (!canSelect(p)) return;
     const n = nearest(p);
     if (!n) return;
-    if (n.dataset.copy !== '1') { p._programmatic = true; centerOn(p, n.dataset.shape, false); styleCarousel(p); }
-    selectShape(n.dataset.shape);
+    chooseShape(p, n);
   }
   function nearest(scroller) {
     const mid = scroller.scrollLeft + scroller.clientWidth / 2;
@@ -1961,27 +1990,35 @@ window.Ads = (function () {
   }
   function syncCarousels() {
     pickers.forEach((p) => {
-      const active = p.closest('.page').dataset.page === mode;
       const n = nearest(p);
       if (!p._scrolling && !p._animating && !p._drag && (!n || n.dataset.shape !== shape || n.dataset.copy !== '1')) { p._programmatic = true; centerOn(p, shape, false); }
       styleCarousel(p);
     });
   }
+  function chooseShape(p, target) {
+    if (!canSelect(p)) return;
+    clearTimeout(p._settleTimer); p._scrolling = false; p._programmatic = false;
+    // Mark the visual slide before renderMenu synchronizes the other picker.
+    centerOn(p, target.dataset.shape, true, target);
+    selectShape(target.dataset.shape);
+  }
   function selectShape(s) {
-    if (shape === s) return;
+    if (state !== 'menu' || busy || shape === s) return;
     coldStart = false;
     shape = s; store.set('ss_shape', shape);
     renderMenu(); reset();
     tone(520, 0.05, 'sine', 0.06);
   }
   pickers.forEach((p) => {
-    let t;
     p.addEventListener('scroll', () => {
+      if (!canSelect(p)) return;
       styleCarousel(p);
       if (p._animating || p._drag) return; // our own slide / drag settles itself
       p._scrolling = true;
-      clearTimeout(t);
-      t = setTimeout(() => {
+      clearTimeout(p._settleTimer);
+      const generation = menuGeneration;
+      p._settleTimer = setTimeout(() => {
+        if (generation !== menuGeneration || !canSelect(p)) return;
         p._scrolling = false;
         if (p._programmatic) { p._programmatic = false; return; }
         settle(p); // only the visible carousel picks a shape (settle checks)
@@ -1989,8 +2026,12 @@ window.Ads = (function () {
     }, { passive: true });
     // Mouse drag on desktop (fingers already scroll natively).
     p.addEventListener('pointerdown', (e) => {
-      if (e.pointerType !== 'mouse' || e.button !== 0) return;
-      cancelAnimationFrame(p._raf); p._animating = false;
+      if (!canSelect(p)) return;
+      p._suppressClick = false;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      cancelAnimationFrame(p._raf); clearTimeout(p._settleTimer); p._animating = false;
+      p._programmatic = false;
+      if (e.pointerType !== 'mouse') { p.style.scrollSnapType = ''; p._gesture = true; return; }
       p._drag = { x: e.clientX, left: p.scrollLeft, moved: false };
       p.style.scrollSnapType = 'none';
     });
@@ -2001,18 +2042,24 @@ window.Ads = (function () {
       if (p._drag.moved) { p.scrollLeft = p._drag.left - dx; styleCarousel(p); }
     });
     window.addEventListener('pointerup', () => {
+      p._gesture = false;
       if (!p._drag) return;
       const moved = p._drag.moved; p._drag = null;
-      if (moved) { p._suppressClick = true; const n = nearest(p); if (n) centerOn(p, n.dataset.shape, true, n); }
+      if (moved) { p._suppressClick = true; const n = nearest(p); if (n) chooseShape(p, n); }
       else p.style.scrollSnapType = '';
+    });
+    window.addEventListener('pointercancel', () => {
+      p._gesture = false;
+      if (p._drag) { p._drag = null; settle(p); }
     });
     // Mouse wheel / trackpad: one notch moves one shape.
     p.addEventListener('wheel', (e) => {
+      if (!canSelect(p)) return;
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (Math.abs(d) < 4 || p._animating) { e.preventDefault(); return; }
       e.preventDefault();
       const items = [...p.querySelectorAll('.shape')], i = items.indexOf(nearest(p)) + (d > 0 ? 1 : -1);
-      if (items[i]) centerOn(p, items[i].dataset.shape, true, items[i]);
+      if (items[i]) chooseShape(p, items[i]);
     }, { passive: false });
   });
   window.addEventListener('resize', () => syncCarousels());
@@ -2029,8 +2076,8 @@ window.Ads = (function () {
   // Switching modes slides the pages and turns the tower a quarter turn.
   let spin = null, modeSlides = [];
   function setMode(m, swipeDir = 0) {
-    if (m === mode || busy) return;
-    modeSlides.forEach(a => a.cancel()); modeSlides = [];
+    if (state !== 'menu' || m === mode || busy || window.Ads.isOpen()) return;
+    finishMenuSelection();
     coldStart = false;
     const previous = mode, delta = MODE_ORDER.indexOf(m) - MODE_ORDER.indexOf(mode);
     const dir = swipeDir || Math.sign(delta) || 1;
@@ -2060,7 +2107,7 @@ window.Ads = (function () {
   shapeBtns.forEach((b) => b.addEventListener('click', () => {
     const p = b.parentElement;
     if (p._suppressClick) { p._suppressClick = false; return; } // the end of a mouse drag, not a tap
-    centerOn(p, b.dataset.shape, true, b); // the slide selects the shape when it lands
+    chooseShape(p, b); // commit now; the slide is presentation only
   }));
   document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => { initAudio(); onPlay(); }));
   $('week').addEventListener('click', () => openCalendar());
@@ -2134,14 +2181,18 @@ window.Ads = (function () {
   }
   async function playDay() {
     if (busy) return;
-    const rec = dayRec(calSel), isToday = calSel === dayKey();
+    const requestedDay = calSel;
+    const rec = dayRec(requestedDay), isToday = requestedDay === dayKey();
     if (!isToday && !rec.unlocked && !rec.played && !(window.Store && window.Store.noAds())) {
       if (!(await rewarded(true))) return;
-      rec.unlocked = true; saveDay(calSel, rec);
+      rec.unlocked = true; saveDay(requestedDay, rec);
     }
+    // The reward belongs to the requested day even if the player navigated away
+    // during loading. Do not start an obsolete calendar action.
+    if ($('calendar').hidden || calSel !== requestedDay) return;
     $('calendar').hidden = true;
     mode = 'daily'; store.set('ss_mode2', mode);
-    runDate = calSel;
+    runDate = requestedDay;
     start();
   }
   $('calBtn').addEventListener('click', openCalendar);
@@ -2241,6 +2292,7 @@ window.Ads = (function () {
   $('thanks').addEventListener('click', closeThanks);
 
   function showMenu() {
+    cancelMenuNavigation();
     cancelHelpReveal();
     const session = tutorialRun;
     if (session && session.practice) { mode = session.prevMode; shape = session.prevShape; runDate = session.prevDate; }
@@ -2271,7 +2323,10 @@ window.Ads = (function () {
     return ok;
   }
   async function onPlay() {
-    if (busy) return;
+    if (state !== 'menu' || busy || window.Ads.isOpen()) return;
+    const p = pageEl(mode).querySelector('[data-picker]');
+    if (p && (p._gesture || p._drag)) return; // only an unresolved held gesture waits
+    finishMenuSelection();
     if (!modeUnlocked(mode)) {
       if (await rewarded()) { unlockMode(mode); showPopup(MODES[mode] + ' unlocked!', 1400); celebrate(false); }
       renderMenu();
@@ -2513,6 +2568,7 @@ window.Ads = (function () {
 
 
   function start() {
+    cancelMenuNavigation();
     coldStart = false;
     cancelHelpReveal();
     tutorialRun = null;
@@ -2578,6 +2634,7 @@ window.Ads = (function () {
   function hideCoach() { clearTimeout(coachTimer); const c = $('coach'); c.classList.remove('show'); setTimeout(() => { if (!c.classList.contains('show')) c.hidden = true; }, reduceMotion ? 0 : 160); }
 
   function startTutorial(practice = true) {
+    cancelMenuNavigation();
     cancelHelpReveal();
     const previous = tutorialRun;
     tutorialRun = { practice, prevMode: previous ? previous.prevMode : mode, prevShape: previous ? previous.prevShape : shape, prevDate: previous ? previous.prevDate : runDate };
@@ -2828,6 +2885,13 @@ window.Ads = (function () {
     }
 
     if (state === 'playing' && !busy && !window.Ads.isOpen()) {
+      // Placement/start are synchronous; teaching locks and terminal transitions
+      // are the only intentional gaps. Restore only the next block, never a run
+      // or rewards, if an unexpected callback/exception removed it.
+      if (!moving && !(tut && tut.lock)) {
+        console.warn('Restoring missing moving block');
+        spawnMoving();
+      }
       if (moving && !(tut && tut.lock)) {
         moving.off += moving.dir * speed() * dt;
         if (moving.off > RANGE) { moving.off = RANGE; moving.dir = -1; }
@@ -2911,6 +2975,8 @@ window.Ads = (function () {
       get perfects() { return perfects; },
       menu(m, s) { if (m) mode = m; if (s) shape = s; showMenu(); },
       get moving() { return moving; },
+      get baseOutline() { return stack[0].mp; },
+      loseMoving() { if (moving) removeMesh(moving.mesh); moving = null; },
       get state() { return state; },
       get score() { return score; },
       get remainingTime() { return timeLeft; },
