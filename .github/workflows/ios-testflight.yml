@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 6b200a783b975cd79c686791955d039274137d40
+          ref: 58adc063d83f906ca9e012172b49dc1011264e5f
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
@@ -31,7 +31,7 @@ jobs:
       - name: Build and sync exact merged QA source
         timeout-minutes: 10
         run: |
-          test "$(git rev-parse HEAD)" = 6b200a783b975cd79c686791955d039274137d40
+          test "$(git rev-parse HEAD)" = 58adc063d83f906ca9e012172b49dc1011264e5f
           ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build
           npx cap sync ios
           cmp www/index.html ios/App/App/public/index.html
