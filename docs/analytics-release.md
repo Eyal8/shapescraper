@@ -58,21 +58,25 @@ Firebase project, app registrations, streams, GA4 linkage and Spark plan were di
 
 ## Privacy and store work
 
-[Website draft PR 25](https://github.com/Eyal8/beno-studio-site/pull/25) updates only Shapescraper's policy and its legal-route assertions. Main deployment requires Eyal's merge approval. This is not a published policy or a store-form update. See `privacy-analytics-update.md` for declaration mappings and remaining checks.
+[Website draft PR 25](https://github.com/Eyal8/beno-studio-site/pull/25) updates only Shapescraper's policy and its legal-route assertions. Main deployment requires Eyal's merge approval. The policy is not published. Play Data safety changes were saved separately as a draft, not submitted; Apple fields remain pending login. See `privacy-analytics-update.md` for declaration mappings and remaining checks.
 
 ## Validation status
 
 58 targeted tests pass (UMP grant/deny/missing/malformed/not-required, errors, returning user, pause/revoke, purchase/reward/interstitial callbacks and packaging guards). Default web build and Capacitor sync pass for iOS and Android. No browser E2E suite or running simulator was started.
 
-Unsigned iOS Simulator compilation passed locally. Packaged Firebase project, explicit QA/test-ad flags, native default-off/identifier/advertising restrictions were checked. Actual resolved Firebase Apple: 12.19.3; GoogleAppMeasurement: 12.19.2; iOS UMP: 3.1.0. Native cold-start traffic still needs a device test.
+Unsigned iOS Simulator compilation passed locally. [Native QA run 43969243134](https://github.com/Eyal8/shapescraper/actions/runs/43969243134) also passed unsigned Simulator and iPhone device builds plus package/dependency checks. Packaged Firebase project, explicit QA/test-ad flags, native default-off/identifier/advertising restrictions were checked. Actual resolved Firebase Apple: 12.19.3; GoogleAppMeasurement: 12.19.2; iOS UMP: 3.1.0. Native cold-start traffic still needs a device test.
 
-App-repository CI is blocked: the GitHub integration returned 403 for branch/tree creation in Eyal8/shapescraper, while website PR access works. GitHub CLI's cached authentication is invalid. Two write attempts were stopped. Android local build first hit sandbox networking; with network access it then stopped because Android Studio's JBR is Java 25 (class file 69), incompatible with this Gradle version. No third Android build retry was made. The purchase event timestamp parser accounts for NativePurchases 8.8.1 Android formatting local time with a literal Z; the iOS timestamp remains UTC, and tests include the Asia/Jerusalem timezone. Recommended pivot: run the prepared CI workflow with its pinned Java 21 after repository access is restored. Android's resolved UMP version is therefore not verified yet. The declared version is not proof.
+GitHub and Java blockers resolved November 17: the existing macOS GitHub credentials work outside the restricted shell; no credentials or account permissions were changed. Branch published as [draft app PR 9](https://github.com/Eyal8/shapescraper/pull/9), with no merge. Eclipse Temurin 21.0.13+9 was downloaded from its official GitHub release and SHA-256 verified, then unpacked only under `/tmp/shapescraper-java21`; system Java remains unchanged. Set `JAVA_HOME` from `/tmp/shapescraper-java21/java-home.txt` when repeating a local build. CI independently pins Temurin 21.
+
+Android QA `assembleDebug` and the existing app unit-test task passed locally with Java 21; the latter contains one framework example test, not a new native consent integration suite. The 58 targeted analytics tests also passed in CI. [Android native QA job](https://github.com/Eyal8/shapescraper/actions/runs/43969243134/job/133656710228) and the [ordinary analytics-off tester build](https://github.com/Eyal8/shapescraper/actions/runs/43969159219) passed. Actual runtime graph: UMP 4.0.0 and Firebase Analytics 23.0.0. Both local and CI QA APKs were inspected for native collection/advertising defaults, custom startup Application, removed automatic FirebaseInitProvider, compiled AnalyticsConsent bridge, correct Firebase Android app ID and explicit test-ad/QA flags. Evidence and the local QA APK are under `artifacts/analytics/`. No Android device was attached; no app was installed or launched on a device/emulator. Default analytics-off web/native assets were restored after validation.
+
+The purchase event timestamp parser accounts for NativePurchases 8.8.1 Android formatting local time with a literal Z; the iOS timestamp remains UTC, and tests include Asia/Jerusalem.
 
 The Xcode setup helper also hit local Swift sandbox restrictions. The simpler resource solution uses the pre-existing Capacitor public folder and the app's SPM transitive dependencies; the successful native build verifies this arrangement without editing the Xcode project or upgrading Firebase to incompatible 13.x.
 
 ## Release gates still required
 
-- CI native build/package/dependency checks must pass; inspect resulting UMP/Firebase versions and privacy manifests.
+- Native builds and packaged dependency/flag checks have passed; physical-device runtime verification remains required.
 - Physical iOS AND Android: test real UMP messages with test ads, fresh/returning grant/deny, NOT_REQUIRED+3, missing purpose, pause, revoke, failed refresh, and cold launch without network after a previous grant. Use Firebase DebugView. On iPhone enable `-FIRDebugEnabled` via development tools and explicitly finish with `-FIRDebugDisabled`.
 - Verify final run counts, Continue, Daily completion/abandonment and sandbox purchases/restores on both platforms.
 - Verify GA sharing/processing terms and reconcile combined AdMob/Analytics Apple App Privacy and Play Data safety forms. Publish policy only after approval.
