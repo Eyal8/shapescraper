@@ -35,7 +35,7 @@ function setup(overrides = {}, platform = 'ios', autoStart = true, clock = Date)
     listeners.interstitialAdDismissed?.();
   };
   const events = {};
-  const window = { Capacitor: { getPlatform: () => platform },
+  const window = { Analytics: { reconcile: async () => true, track() {} }, Capacitor: { getPlatform: () => platform },
     capacitorExports: { registerPlugin: () => plugin }, Store: { noAds: () => false } };
   vm.runInNewContext(source, { window, console: { warn() {} }, Event: class { constructor(type) { this.type = type; } },
     document: { dispatchEvent(e) { events[e.type]?.(); }, addEventListener(n, fn) { events[n] = fn; },
@@ -171,6 +171,7 @@ test('startup is explicitly sequenced at a safe boundary and runs once', async (
 test('timed-out consent refresh cannot present a late form or request ads', async () => {
   const request = deferred();
   const s = setup({ requestConsentInfo: () => request.promise });
+  await flush();
   s.timers[0](); // request watchdog, before any native presentation
   await s.ads.startup();
   request.resolve(info(true, { isConsentFormAvailable: true }));
@@ -184,6 +185,7 @@ test('ad initialization cannot hold the consent/play boundary indefinitely', asy
   const s = setup({ initialize: () => init.promise });
   await s.ads.startup();
   assert.equal(s.ads.isOpen(), false);
+  await flush();
   const reward = s.ads.showRewarded();
   assert.deepEqual(s.calls, ['requestConsentInfo', 'initialize']);
   s.timers.at(-1)(); // initialization watchdog; no late initialization may load ads
