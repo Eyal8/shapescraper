@@ -31,3 +31,7 @@ Store builds (Android release, iOS TestFlight) show **real ads**; local builds a
 For a local build with real ads: `ADS_TEST=false npm run sync`. Never tap your own real ads.
 
 After editing `src/game.html`, run `npm run sync`.
+
+## Gameplay analytics
+
+Native Firebase Analytics follows the existing Google UMP message; there is no separate consent prompt. Default tester/preview builds do not collect. Private device QA uses `ANALYTICS_TEST=true UMP_TEST=true npm run build` and test ads, followed by Capacitor sync. Main menu → Gameplay analytics shows status, a device pause and an Analytics ID for privacy requests. See [implementation and release gates](docs/analytics-release.md) and [prepared store declarations](docs/privacy-analytics-update.md). The analytics QA workflow builds without signing cleanup or store uploads. No app release is authorized yet.

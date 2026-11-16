@@ -66,7 +66,17 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>GADApplicationIdentifier</key>
+	<!-- Build script keeps native collection and the web release switch aligned. -->
+    <key>FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED</key><true/>
+    <key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key><false/>
+    <key>GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED</key><false/>
+    <key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS</key><false/>
+    <key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE</key><false/>
+    <key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_STORAGE</key><false/>
+    <key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_USER_DATA</key><false/>
+    <key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION</key><false/>
+    <key>FirebaseAutomaticScreenReportingEnabled</key><false/>
+    <key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-5535097818156227~6590416851</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>This lets us show you more relevant ads, which keeps Shapescraper free.</string>

@@ -1,5 +1,7 @@
 import UIKit
 import Capacitor
+import FirebaseCore
+import FirebaseAnalytics
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +9,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Configure before UMP, and suspend the collection flag persisted by Firebase.
+        // public/ is already a bundled folder resource in this Capacitor project.
+        if FirebaseApp.app() == nil,
+           let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist", inDirectory: "public"),
+           let options = FirebaseOptions(contentsOfFile: path) {
+            FirebaseApp.configure(options: options)
+        }
+        if FirebaseApp.app() != nil {
+            Analytics.setAnalyticsCollectionEnabled(false)
+            Analytics.setConsent([.analyticsStorage: .denied, .adStorage: .denied,
+                                  .adUserData: .denied, .adPersonalization: .denied])
+        }
         return true
     }
 

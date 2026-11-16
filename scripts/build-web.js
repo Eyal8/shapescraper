@@ -2,10 +2,41 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
+// Explicit release gate: keep collection off in both native SDKs, including on
+// devices which opted in to an earlier build. Never couple analytics to ad mode.
+const realAds = process.env.ADS_TEST === 'false';
+const analyticsTest = process.env.ANALYTICS_TEST === 'true';
+const umpTest = process.env.UMP_TEST === 'true';
+if (analyticsTest && realAds) throw new Error('ANALYTICS_TEST requires test ads');
+if (umpTest && (!analyticsTest || realAds)) throw new Error('UMP_TEST requires ANALYTICS_TEST=true and test ads');
+const analyticsEnabled = realAds || analyticsTest;
+if (analyticsEnabled) {
+  for (const file of ['android/app/google-services.json', 'ios/App/App/GoogleService-Info.plist']) {
+    if (!fs.existsSync(path.join(root, file))) throw new Error(`Analytics configuration missing: ${file}`);
+  }
+}
+function nativeAnalyticsSwitch(file, pattern, replacement) {
+  const target = path.join(root, file), source = fs.readFileSync(target, 'utf8');
+  if (!pattern.test(source)) throw new Error(`Native analytics switch missing: ${file}`);
+  fs.writeFileSync(target, source.replace(pattern, replacement));
+}
+nativeAnalyticsSwitch('ios/App/App/Info.plist',
+  /(<key>FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED<\/key>)<(?:true|false)\/>/,
+  `$1<${analyticsEnabled ? 'false' : 'true'}/>`);
+nativeAnalyticsSwitch('android/app/src/main/AndroidManifest.xml',
+  /(android:name="firebase_analytics_collection_deactivated" android:value=")(?:true|false)(")/,
+  `$1${!analyticsEnabled}$2`);
 const www = path.join(root, 'www');
 fs.mkdirSync(www, { recursive: true });
 
 let game = fs.readFileSync(path.join(root, 'src/game.html'), 'utf8');
+if (!game.includes('const ANALYTICS_ALLOWED = false;')) throw new Error('Analytics build switch missing');
+if (analyticsEnabled) game = game.replace('const ANALYTICS_ALLOWED = false;', 'const ANALYTICS_ALLOWED = true;');
+if (!umpTest) {
+  for (const section of ['controls', 'dialog', 'menu']) game = game.replace(new RegExp(`<!-- UMP test ${section} start -->[\\s\\S]*?<!-- UMP test ${section} end -->\\n?`), '');
+  game = game.replace(/  \/\/ UMP test UI start[\s\S]*?  \/\/ UMP test UI end\n?/, '');
+}
+console.log(`Analytics: ${analyticsEnabled ? 'UMP-controlled' : 'disabled'}`);
 const launchDesign = require('../assets/launch-design.json');
 game = game.replace('--bg-fallback: #9dbef2;', `--bg-fallback: ${launchDesign.fallback};`)
   .replace('min(44vw, 44vh, 180px)', `min(${launchDesign.symbolWidthFraction * 100}vw, ${launchDesign.symbolWidthFraction * 100}vh, ${launchDesign.symbolMaxPoints}px)`)
@@ -32,7 +63,6 @@ game = game.replace(/<link rel="preconnect"[^>]*>\n?/, '').replace(/<link rel="s
 if (game.includes('fonts.googleapis.com')) throw new Error('Google Fonts link not replaced');
 
 // Real ads only in store builds: ADS_TEST=false. Everything else shows Google's test ads.
-const realAds = process.env.ADS_TEST === 'false';
 if (!game.includes('    testing: true,')) throw new Error('ads testing flag not found');
 if (realAds) game = game.replace('    testing: true,', '    testing: false,');
 console.log(realAds ? 'Ads: REAL (store build)' : 'Ads: test mode');
@@ -62,4 +92,5 @@ const fs_ = (pkg, file, out) => fs.copyFileSync(path.join(root, 'node_modules/@f
 fs_('unbounded', 'unbounded-latin-500-normal.woff2', 'unbounded-500.woff2');
 fs_('unbounded', 'unbounded-latin-800-normal.woff2', 'unbounded-800.woff2');
 fs_('dm-mono', 'dm-mono-latin-500-normal.woff2', 'dm-mono-500.woff2');
+fs.copyFileSync(path.join(root, 'ios/App/App/GoogleService-Info.plist'), path.join(www, 'GoogleService-Info.plist'));
 console.log('Built www/');

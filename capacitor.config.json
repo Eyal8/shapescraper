@@ -8,5 +8,22 @@
       "launchAutoHide": false,
       "launchFadeOutDuration": 0
     }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "swiftToolsVersion": "6.1",
+        "packageOptions": {
+          "@capacitor-firebase/analytics": {
+            "symlink": true
+          }
+        },
+        "packageTraits": {
+          "@capacitor-firebase/analytics": [
+            "AnalyticsWithoutAdIdSupport"
+          ]
+        }
+      }
+    }
   }
 }

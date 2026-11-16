@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "900403742111",
+    "project_id": "beno74-shapescraper",
+    "storage_bucket": "beno74-shapescraper.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:900403742111:android:f077891ae15bce9150e9aa",
+        "android_client_info": {
+          "package_name": "com.beno74.shapescraper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgE07KmL3yiYhPawk1MoFP3BZTXhWNQgQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

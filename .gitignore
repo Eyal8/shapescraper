@@ -4,3 +4,6 @@ www/
 
 # Private notes live in the claude.ai Project, not here
 HANDOFF.md
+
+# Capacitor regenerates these local absolute symlinks on sync.
+ios/App/CapApp-SPM/symlinks/

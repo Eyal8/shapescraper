@@ -1,0 +1,99 @@
+name: Analytics native QA (no store upload)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ADS_TEST: 'true'
+      ANALYTICS_TEST: 'true'
+      UMP_TEST: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: node --test tests/analytics.test.cjs tests/ad-consent.test.cjs tests/analytics-build.test.cjs
+      - run: npm run build && npx cap sync android
+      - name: Resolve UMP and Firebase; build QA APK
+        run: |
+          mkdir -p artifacts/analytics
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > ../artifacts/analytics/android-runtime-dependencies.txt
+          ./gradlew :app:assembleDebug
+          cd ..
+          grep 'com.google.android.ump:user-messaging-platform:4.' artifacts/analytics/android-runtime-dependencies.txt
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/public/index.html | grep 'const ANALYTICS_ALLOWED = true;'
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/public/index.html | grep 'window.UMPTest ='
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/public/GoogleService-Info.plist | grep beno74-shapescraper
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shapescraper-analytics-android-qa
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            artifacts/analytics/android-runtime-dependencies.txt
+
+  ios:
+    runs-on: macos-latest
+    env:
+      ADS_TEST: 'true'
+      ANALYTICS_TEST: 'true'
+      UMP_TEST: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --test tests/analytics.test.cjs tests/ad-consent.test.cjs tests/analytics-build.test.cjs
+      - run: npm run build && npx cap sync ios
+      - name: Build unsigned iOS Simulator and device apps
+        run: |
+          set -o pipefail
+          xcodebuild build -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/analytics-simulator" \
+            OTHER_LDFLAGS='$(inherited) -ObjC' CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/analytics-simulator.log"
+          xcodebuild build -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/analytics-device" \
+            OTHER_LDFLAGS='$(inherited) -ObjC' CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/analytics-device.log"
+      - name: Check actual packaged flags and UMP resolution
+        run: |
+          APP="$RUNNER_TEMP/analytics-simulator/Build/Products/Debug-iphonesimulator/App.app"
+          plutil -lint "$APP/Info.plist" "$APP/public/GoogleService-Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' "$APP/public/GoogleService-Info.plist")" = beno74-shapescraper
+          test "$(/usr/libexec/PlistBuddy -c 'Print :FIREBASE_ANALYTICS_COLLECTION_ENABLED' "$APP/Info.plist")" = false
+          test "$(/usr/libexec/PlistBuddy -c 'Print :GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED' "$APP/Info.plist")" = false
+          grep -q AnalyticsWithoutAdIdSupport ios/App/CapApp-SPM/Package.swift
+          python3 - <<'PY'
+          import json, pathlib
+          files = list(pathlib.Path('ios').rglob('Package.resolved'))
+          pins = [pin for file in files for pin in json.loads(file.read_text()).get('pins', [])]
+          ump = [p for p in pins if p['identity'] == 'swift-package-manager-google-user-messaging-platform']
+          assert ump and all(tuple(map(int, p['state']['version'].split('.'))) >= (3, 0, 0) for p in ump), ump
+          print('Resolved UMP:', ump)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shapescraper-analytics-ios-validation
+          path: |
+            ios/**/Package.resolved
+            ${{ runner.temp }}/analytics-simulator.log
+            ${{ runner.temp }}/analytics-device.log

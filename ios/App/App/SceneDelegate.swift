@@ -8,7 +8,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        window?.rootViewController = ShapescraperBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
@@ -20,5 +20,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
+    }
+}
+
+// Local UMP reader registered alongside the packaged Capacitor plugins.
+class ShapescraperBridgeViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AnalyticsConsentPlugin())
+    }
+}
+
+@objc(AnalyticsConsentPlugin)
+public class AnalyticsConsentPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AnalyticsConsentPlugin"
+    public let jsName = "AnalyticsConsent"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "getConsentModes", returnType: CAPPluginReturnPromise)
+    ]
+    @objc func getConsentModes(_ call: CAPPluginCall) {
+        call.resolve(["values": UserDefaults.standard.string(forKey: "UMP_consentModeValues") ?? ""])
     }
 }
