@@ -4,6 +4,14 @@ name: Android release (Play Store bundle)
 on:
   workflow_dispatch:
     inputs:
+      version_code:
+        description: 'Unused Play version code (blank uses workflow run number)'
+        type: string
+        default: ''
+      analytics_qa:
+        description: 'Enable UMP-controlled Analytics with test ads, without private QA controls'
+        type: boolean
+        default: false
       real_ads:
         description: 'Show real ads (only for the public store release; test builds use Google test ads)'
         type: boolean
@@ -21,8 +29,24 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Validate build inputs
+        env:
+          REAL_ADS: ${{ inputs.real_ads }}
+          ANALYTICS_QA: ${{ inputs.analytics_qa }}
+          VERSION_CODE: ${{ inputs.version_code || github.run_number }}
+        run: |
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if [[ "$REAL_ADS" == true && "$ANALYTICS_QA" == true ]]; then
+            echo "Analytics QA requires test ads"
+            exit 1
+          fi
       - run: npm ci
-      - run: ADS_TEST=${{ inputs.real_ads && 'false' || 'true' }} npm run build && npx cap sync android
+      - name: Build web assets
+        env:
+          ADS_TEST: ${{ inputs.real_ads && 'false' || 'true' }}
+          ANALYTICS_TEST: ${{ inputs.analytics_qa && 'true' || 'false' }}
+          UMP_TEST: 'false'
+        run: npm run build && npx cap sync android
       - name: Restore upload key
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/upload.jks"
       - name: Build signed bundle
@@ -31,7 +55,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          VERSION_CODE: ${{ github.run_number }}
+          VERSION_CODE: ${{ inputs.version_code || github.run_number }}
         run: chmod +x android/gradlew && cd android && ./gradlew bundleRelease
       - uses: actions/upload-artifact@v4
         with:

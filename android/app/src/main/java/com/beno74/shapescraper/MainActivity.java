@@ -6,6 +6,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AnalyticsConsentPlugin.class);
+        registerPlugin(RegionalAgePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

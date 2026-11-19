@@ -66,6 +66,8 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   display: flex; flex-direction: column; align-items: center;
 }
+/* Modal controls must receive input despite the non-interactive HUD parent. */
+dialog { pointer-events: auto; touch-action: manipulation; }
 #score {
   font-family: var(--display); font-weight: 800;
   font-size: clamp(56px, 18vw, 96px); line-height: 1;
@@ -158,8 +160,16 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
   100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
 }
 .panel { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; text-align: center; }
-.panel:not([hidden]), #calendar:not([hidden]) .cal-card, #intro:not([hidden]) .card { animation: surfaceIn var(--motion-in) var(--ease-ui) both; }
-@keyframes surfaceIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+.panel:not([hidden]), #calendar:not([hidden]) .cal-card, #intro:not([hidden]) .card, #adSim:not([hidden]) .adbox, dialog[open] { animation: surfaceIn var(--motion-in) var(--ease-ui) both; }
+@keyframes surfaceIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+/* Discrete exits keep the departing surface visible while input closes immediately. */
+.panel, #intro, #calendar, #adSim { transition: opacity var(--motion-out), display var(--motion-out) allow-discrete; }
+.panel[hidden], #intro[hidden], #calendar[hidden], #adSim[hidden], dialog:not([open]) { opacity: 0; }
+.panel[hidden] *, #intro[hidden] *, #calendar[hidden] *, #adSim[hidden] * { pointer-events: none !important; }
+dialog:not([open]), dialog:not([open]) *, dialog[data-closing] * { pointer-events: none !important; }
+dialog::backdrop { background: rgba(10,12,24,.65); transition: opacity var(--motion-out); }
+dialog[data-closing]::backdrop { opacity: 0; }
+@starting-style { dialog[open]::backdrop { opacity: 0; } }
 .panel h1 {
   margin: 0; font-family: var(--display); font-weight: 800;
   font-size: clamp(32px, 10vw, 58px); line-height: 0.95; letter-spacing: -0.01em; text-wrap: balance;
@@ -226,13 +236,16 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 .daily-goal b { display: block; font: 800 16px/1.2 var(--display); }
 .daily-goal span { font-size: 12px; color: var(--ink-soft); }
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.wk { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 10px; color: var(--ink-dim); text-transform: uppercase; }
+.wk { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; min-height: 44px; padding: 2px 0; border: 0; background: none; cursor: pointer; font: 500 10px var(--mono); color: var(--ink-dim); text-transform: uppercase; }
 .wk i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--chip-line); display: grid; place-items: center; font-style: normal; color: var(--ink-dark); font-size: 11px; }
 .wk.played i { border-color: var(--ink-soft); }
 .wk.done i { background: var(--done); border-color: var(--done); }
-.wk.saved i { border: 1.5px dashed var(--gold); }
+.wk.late i { background: #c6b3ff; color: var(--ink-dark); border-color: #c6b3ff; }
 .wk.today { color: var(--ink); }
-.wk.today i { box-shadow: 0 0 0 2px var(--ink); }
+.wk.today i { box-shadow: 0 0 0 2px var(--gold); }
+.wk[aria-pressed="true"] i { outline: 2px solid var(--ink); outline-offset: 3px; }
+.wk.future { opacity: .45; }
+.daily-streak-row { display: flex; justify-content: center; }
 #modeInfo, .info { max-width: 340px; margin: 0; font-size: 13px; line-height: 1.45; letter-spacing: 0.01em; color: var(--ink); }
 .actions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .btn {
@@ -301,11 +314,6 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 #coach .pips3 i.on { background: var(--gold); border-color: var(--gold); }
 #coach:not(:has(span:not(:empty))) b { margin-bottom: 0; }
 #intro { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(10, 12, 24, 0.74); }
-/* Fixed modal exits are visual only; hidden state and input handling change immediately.
-   WebViews without discrete transitions fall back to an immediate hide. */
-#intro, #calendar { transition: opacity var(--motion-out), display var(--motion-out) allow-discrete; }
-#intro[hidden], #calendar[hidden] { opacity: 0; }
-#intro[hidden] *, #calendar[hidden] * { pointer-events: none !important; }
 #intro .card { width: min(320px, 100%); padding: 22px 18px 18px; gap: 14px; background: #24283d; color: #fff; text-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 #introTitle { font-size: 22px; }
 #dailyHelper { margin: 0; font-size: 11px; line-height: 1.4; color: var(--ink-soft); }
@@ -318,7 +326,7 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 @keyframes sweep { 0%, 35% { left: -60%; } 75%, 100% { left: 130%; } }
 @keyframes nudge { 0%, 60%, 100% { transform: scale(1); } 70% { transform: scale(1.04); } 80% { transform: scale(0.99); } }
 .btn.gold { background: var(--gold); border-color: var(--gold); color: #2a2140; }
-#calDayStatus { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+#calDayStatus { line-height: 1.5; }
 #offerScore { color: #fff; font: 800 18px/1.2 var(--display); letter-spacing: .04em; }
 #offerTip { max-width: 260px; text-align: center; line-height: 1.5; color: #fff; }
 #offerTip span { display: block; font-size: 12px; letter-spacing: .02em; text-transform: none; }
@@ -343,7 +351,7 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 .tog[aria-pressed="false"] { opacity: 0.6; }
 /* calendar */
 #calendar {
-  position: fixed; inset: 0; z-index: 12; display: flex; align-items: flex-end; justify-content: center;
+  position: fixed; inset: 0; z-index: 18; display: flex; align-items: flex-end; justify-content: center;
   background: rgba(10, 12, 24, 0.35);
   padding-top: calc(env(safe-area-inset-top, 0px) + 16px);
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
@@ -374,17 +382,19 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 }
 .day:disabled { color: rgba(255,255,255,0.22); cursor: default; }
 .day.played { border-color: var(--ink-dim); }
-.day.done { background: var(--done); color: var(--ink-dark); }
+.day.done { background: var(--done); border-color: var(--done); color: var(--ink-dark); }
 .day.today { box-shadow: inset 0 0 0 2px var(--gold); }
-.day.saved { border: 1.5px dashed var(--gold); }
-.lg-saved { border: 1.5px dashed var(--gold); }
+.day.late { background: #c6b3ff; color: var(--ink-dark); border-color: #c6b3ff; }
+.lg-late { background: #c6b3ff; }
 .save-streak { width: 100%; padding: 11px 16px; }
 #unlockNote.close { color: var(--gold); font-weight: 500; animation: nudge 2.4s ease-in-out infinite; }
 .day[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cal-detail { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 18px; background: var(--chip); text-align: left; }
 .cal-detail b { font: 800 15px var(--display); }
-.cal-legend { display: flex; gap: 14px; justify-content: center; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: center; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
 .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.cal-legend.week-legend { gap: 6px 8px; font-size: 9px; letter-spacing: .02em; }
+.cal-legend.week-legend i { width: 8px; height: 8px; margin-right: 3px; }
 .lg-done { background: var(--done); }
 .lg-played { border: 1.5px solid var(--ink-dim); box-sizing: border-box; }
 .lg-today { box-shadow: inset 0 0 0 2px var(--gold); }
@@ -419,9 +429,13 @@ button:enabled:active, .menu-footer a:active, #week:active { scale: .975; }
 .daily-goal .goal-text { flex: 0 1 auto; min-width: 0; }
 .daily-goal .goal-text span { display: block; margin-top: 2px; text-wrap: balance; }
 .daily-goal .goal-text .goal-kicker { margin: 0 0 3px; font-size: 10px; color: var(--ink-soft); }
-.streak-pill { position: absolute; top: 8px; right: 8px; flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(255,209,102,0.16); color: var(--gold); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.streak-pill { --streak-color: #8de7dd; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; background: #24283d; border: 1px solid var(--streak-color); box-shadow: 0 3px 14px rgba(0,0,0,.18); color: var(--streak-color); font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; text-shadow: none; }
+.streak-pill::before { content: '✦'; font-size: 15px; }
+.streak-pill[data-tier="3"] { --streak-color: #ffd166; }
+.streak-pill[data-tier="7"] { --streak-color: #ffb3cf; }
+.streak-pill[data-tier="14"] { --streak-color: #c6b3ff; }
+.streak-pill[data-tier="30"] { --streak-color: #9cd6ff; }
 .daily-top .link-btn { padding: 0; font-size: 11px; }
-.week { cursor: pointer; }
 .cal-detail span { display: block; text-wrap: balance; }
 p, .info, .label, .celebrate-title { text-wrap: balance; }
 @media (max-height: 720px) { .panel h1 { font-size: 30px; } .card { gap: 9px; padding: 12px; } .tagline { display: none; } }
@@ -438,6 +452,14 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
   #thanks .thanks-shapes svg { opacity: 1; }
   #thanks .thanks-card, #score.bump { transform: none; }
 }
+
+/* Keep both footer rows reachable on short screens without shrinking touch targets. */
+.hud.menu-open #menu { max-height:100%; overflow-y:auto; flex-shrink:0; pointer-events:auto; }
+.menu-footer { flex-direction:column; gap:0; width:100%; }
+.menu-footer .privacy-links { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:0 8px; }
+.menu-footer .privacy-links > * { font:inherit; letter-spacing:.04em; text-transform:none; text-decoration:underline; text-underline-offset:3px; min-height:44px; padding:0 8px; }
+.menu-footer .privacy-btn { margin:0; color:inherit; }
+.menu-footer .privacy-btn[hidden] { display:none; }
 </style>
 
 <canvas id="c" aria-label="Shapescraper game"></canvas>
@@ -491,8 +513,10 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <section class="page" data-page="daily" aria-label="Daily">
         <div class="page-main">
           <div class="daily-top"><span class="label" id="dailyDate"></span><button type="button" class="link-btn" id="calBtn">Calendar</button></div>
-          <div class="daily-goal"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div class="goal-text"><span class="label goal-kicker">Today's shape</span><b id="dailyShape"></b><span id="dailyGoal"></span></div><span class="streak-pill" id="dailyStreak" hidden></span></div>
-          <div class="week" id="week" role="button" tabindex="0" aria-label="Open calendar"></div>
+          <div class="daily-streak-row"><span class="streak-pill" id="dailyStreak" hidden></span></div>
+          <div class="daily-goal" aria-live="polite"><svg viewBox="-1 -1 2 2" aria-hidden="true"><path class="glyph" id="dailyGlyph" d=""/></svg><div class="goal-text"><span class="label goal-kicker" id="dailyKicker">Today's shape</span><b id="dailyShape"></b><span id="dailyGoal"></span></div></div>
+          <div class="week" id="week" role="group" aria-label="Choose a day this week"></div>
+          <div class="cal-legend week-legend"><span><i class="lg-done"></i>Streak day</span><span><i class="lg-late"></i>Late</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span></div>
           <p id="dailyHelper">Come back daily to build your streak.</p>
           <button type="button" class="btn gold shine save-streak" data-save-streak hidden></button>
         </div>
@@ -509,35 +533,27 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
     <div class="row">
       <button type="button" class="link-btn" id="noAdsBtn">Remove ads</button>
       <button type="button" class="link-btn" id="restoreBtn">Restore purchases</button>
-      <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
-      <button type="button" class="link-btn" id="analyticsBtn" hidden>Gameplay analytics</button>
 <!-- UMP test menu start -->
       <button type="button" class="link-btn" id="umpTestBtn" hidden>UMP test controls</button>
 <!-- UMP test menu end -->
     </div>
     <footer class="menu-footer" aria-label="Studio and privacy">
-      <a class="credit" href="https://beno74.com" target="_blank" rel="noopener noreferrer">BENO74 STUDIOS</a><span aria-hidden="true">·</span><a href="https://beno74.com/privacy/shapescraper" target="_blank" rel="noopener noreferrer">Privacy</a>
+      <div class="privacy-links">
+        <a href="https://beno74.com/privacy/shapescraper" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+        <button type="button" class="link-btn privacy-btn" hidden>Privacy choices</button>
+      </div>
+      <a class="credit" href="https://beno74.com" target="_blank" rel="noopener noreferrer">BENO74 STUDIOS</a>
     </footer>
   </div>
 
-  <dialog id="analyticsChoices" aria-labelledby="analyticsTitle" style="max-width:340px;border:0;border-radius:20px;padding:24px;background:#20253b;color:white">
-    <h2 id="analyticsTitle">Gameplay analytics</h2>
-    <p>Google Analytics for Firebase helps us improve the game. Collection follows your Google privacy choices, or UMP confirming prior consent is not required.</p>
-    <p id="analyticsStatus" role="status" aria-live="polite"></p>
-    <p>Pausing stops collection on this device. Resuming does not override your privacy choices. Stopping collection does not delete historical reports.</p>
-    <p>For access or deletion requests, email privacy@beno74.com with this Analytics ID:</p>
-    <p id="analyticsId" style="overflow-wrap:anywhere;user-select:text"></p>
-    <button type="button" class="btn primary" id="analyticsPause">Pause analytics on this device</button>
-    <button type="button" class="link-btn privacy-btn" hidden>Privacy choices</button>
-    <button type="button" class="link-btn" id="analyticsClose">Close</button>
-  </dialog>
 <!-- UMP test dialog start -->
-  <dialog id="umpTestChoices" aria-labelledby="umpTestTitle" style="max-width:340px;border:0;border-radius:20px;padding:24px;background:#20253b;color:white">
+  <dialog id="umpTestChoices" aria-labelledby="umpTestTitle" style="box-sizing:border-box;width:calc(100% - 32px);max-width:360px;border:0;border-radius:20px;padding:24px;background:#20253b;color:white">
     <h2 id="umpTestTitle">UMP test controls</h2>
-    <p>Private QA only. Use UMP device IDs from the native log, not the Analytics ID.</p>
+    <p>Private QA only. Use UMP device IDs from the native log, not the Analytics ID. iOS Simulator is automatically a test device; enter SIMULATOR there.</p>
     <label>Region <select id="umpRegion"><option value="0">Actual</option><option value="1">EEA</option><option value="3">US</option><option value="4">Other</option></select></label>
-    <label>UMP test device IDs <textarea id="umpDevices" rows="3"></textarea></label>
-    <p id="umpStatus" role="status" aria-live="polite"></p>
+    <label>UMP test device IDs <textarea id="umpDevices" rows="3" style="display:block;box-sizing:border-box;width:100%;font:inherit;color:inherit;-webkit-user-select:text;user-select:text"></textarea></label>
+    <button type="button" class="link-btn" id="umpSimulator" hidden>Use iOS Simulator</button>
+    <p id="umpStatus" role="status" aria-live="polite" style="overflow-wrap:anywhere"></p>
     <button type="button" class="btn primary" id="umpSave">Save and reset UMP</button>
     <button type="button" class="link-btn" id="umpClose">Close</button>
   </dialog>
@@ -585,8 +601,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <div class="row">
         <button type="button" class="link-btn" id="menuBtn">Menu</button>
         <button type="button" class="link-btn" id="overCalBtn" hidden>Calendar</button>
-        <button type="button" class="link-btn privacy-btn" hidden>Ad privacy choices</button>
-      </div>
+        </div>
     </div>
   </div>
 </div>
@@ -619,13 +634,14 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
       <button type="button" class="icon-btn" id="calNext" aria-label="Next month"><svg viewBox="0 0 14 14"><path d="M5 2l5 5-5 5"/></svg></button>
     </div>
     <div class="cal-grid" id="calGrid"></div>
-    <div class="cal-legend"><span><i class="lg-done"></i>Complete</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span><span id="lgSaved" hidden><i class="lg-saved"></i>Saved</span></div>
+    <div class="cal-legend"><span><i class="lg-done"></i>Streak day</span><span><i class="lg-late"></i>Late</span><span><i class="lg-played"></i>Played</span><span><i class="lg-today"></i>Today</span></div>
     <div class="cal-detail">
       <b id="calDayTitle"></b>
       <span class="info" id="calDayGoal"></span>
       <span class="label" id="calDayStatus"></span>
       <button type="button" class="btn primary" id="calPlay">Play</button>
     </div>
+    <button type="button" class="link-btn" id="calDailyMenu">Daily menu</button>
   </div>
 </div>
 
@@ -662,6 +678,53 @@ setTimeout(window.__hideLaunchScreen, 8000);
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script>
+// Regional age assurance. Native applicability gates alone authorize required sharing.
+window.AgeAssurance = (() => {
+  const platform = window.Capacitor?.getPlatform?.() || 'web';
+  const plugin = ['ios', 'android'].includes(platform) && window.capacitorExports
+    ? window.capacitorExports.registerPlugin('RegionalAge') : null;
+  let state = { status: ['ios', 'android'].includes(platform) ? 'pending' : 'web' };
+  let checkPromise, requestPromise;
+  const valid = new Set(['notRequired', 'required', 'resolved', 'unsupported', 'unavailable', 'unresolved', 'declined', 'verificationRequired', 'error']);
+  function accept(result) {
+    if (!result || !valid.has(result.status)) return { status: 'error' };
+    // A resolved range must identify either a minor or an adult explicitly.
+    if (result.status === 'resolved' && typeof result.minor !== 'boolean') return { status: 'unresolved' };
+    return { status: result.status, minor: result.minor === true, childDirected: result.childDirected === true };
+  }
+  function refresh() {
+    if (!['ios', 'android'].includes(platform)) return Promise.resolve(state);
+    return checkPromise || (checkPromise = (async () => {
+      try { state = accept(await plugin.getRequirements()); }
+      catch (_) { state = { status: 'error' }; }
+      return state;
+    })());
+  }
+  function ensure() {
+    return requestPromise || (requestPromise = (async () => {
+      await refresh();
+      if (state.status === 'required') {
+        // Native re-checks applicability before any prompt-capable request.
+        try { state = accept(await plugin.requestRequiredAgeRange()); }
+        catch (_) { state = { status: 'error' }; }
+      }
+      return state;
+    })());
+  }
+  const regularFlow = () => (state.status === 'notRequired' || state.status === 'web' || (platform === 'ios' && state.status === 'unsupported'));
+  const adsAllowed = () => regularFlow() || state.status === 'resolved';
+  // Conservative per-user choice: no optional analytics for a known minor until
+  // a separately verified minor analytics-permission path exists. Never log the signal.
+  const analyticsAllowed = () => regularFlow() || (state.status === 'resolved' && !state.minor);
+  const adOptions = () => state.status === 'resolved' && state.minor
+    ? (state.childDirected ? { maxAdContentRating: 'General' } : {}) : {};
+  const consentOptions = () => state.status === 'resolved' && state.minor ? { tagForUnderAgeOfConsent: true } : {};
+  const trackingAllowed = () => adsAllowed() && !(state.status === 'resolved' && state.minor);
+  return { refresh, ensure, adsAllowed, analyticsAllowed, adOptions, consentOptions, trackingAllowed,
+    requiresSharing: () => state.status === 'required', status: () => state.status };
+})();
+</script>
 <script>
 // ---------- Gameplay analytics: UMP basic consent mode, native only ----------
 window.Analytics = (() => {
@@ -707,8 +770,8 @@ window.Analytics = (() => {
         try { modes = (await consent.getConsentModes()).values; } catch (_) {}
       }
       const valid = typeof modes === 'string' && /^[0-4]{4}$/.test(modes);
-      const permitted = valid && (modes[3] === '1' || (modes[3] === '3' && status === 'NOT_REQUIRED'));
-      const allow = available && !paused && permitted;
+      const permitted = valid && (modes[3] === '1' || modes[3] === '3');
+      const allow = window.AgeAssurance.analyticsAllowed() && available && !paused && permitted;
       // UMP advertising choices never enable advertising inside Analytics.
       for (const type of ['AD_STORAGE', 'AD_USER_DATA', 'AD_PERSONALIZATION']) await plugin.setConsent({ type, status: 'DENIED' });
       await plugin.setConsent({ type: 'ANALYTICS_STORAGE', status: allow ? 'GRANTED' : 'DENIED' });
@@ -898,14 +961,14 @@ window.Ads = (function () {
   let lastInterstitial = Date.now(); // never right at launch
   let lastRewarded = 0; // a player who just watched a rewarded ad doesn't get a forced one next
   let lastConsentError = '';
-  const consentOptions = () => window.UMPTest ? window.UMPTest.options() : {};
+  const consentOptions = () => ({ ...(window.UMPTest ? window.UMPTest.options() : {}), ...window.AgeAssurance.consentOptions() });
   let privacyRequired = false; // UMP says players must be able to reopen ad privacy choices
 
   let canRequestAds = false; // latest SDK result, never persisted as custom consent
   let initialized = false;
   let privacyBusy = false;
   let consentGeneration = 0;
-  let consentInfo, consentInfoPromise, startupPromise, adsStartPromise, initializePromise;
+  let consentInfo, consentInfoPromise, startupPromise, adsStartPromise, initializePromise, trackingPromise;
   const loading = { interstitial: null, rewarded: null };
 
   // Only non-presenting native work is bounded; UMP forms cannot safely be cancelled.
@@ -923,6 +986,7 @@ window.Ads = (function () {
     return consentInfoPromise || (consentInfoPromise = (async () => {
       await window.Analytics.reconcile(false);
       try {
+        await window.AgeAssurance.refresh(); // silent; never presents an age-sharing sheet
         const info = await bounded(AdMob.requestConsentInfo(consentOptions()), 8000);
         consentInfo = info;
         lastConsentError = '';
@@ -945,12 +1009,22 @@ window.Ads = (function () {
 
   async function startAds(info) {
     updatePrivacy(info);
-    canRequestAds = info.canRequestAds === true;
+    canRequestAds = info.canRequestAds === true && window.AgeAssurance.adsAllowed();
     await window.Analytics.reconcile(info.status);
     if (!canRequestAds) return;
     if (!initialized) {
-      await (initializePromise || (initializePromise = bounded(AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen' }), 15000)));
+      await (initializePromise || (initializePromise = bounded(AdMob.initialize({ initializeForTesting: CONFIG.testing, maxAdContentRating: 'Teen', ...window.AgeAssurance.adOptions() }), 15000)));
       initialized = true;
+    }
+    // UMP gets the first opportunity to show its IDFA explainer and Apple's ATT.
+    // Complete an unanswered ATT choice once, without granting analytics consent.
+    if (platform === 'ios' && window.AgeAssurance.trackingAllowed()) {
+      await (trackingPromise || (trackingPromise = (async () => {
+        try {
+          const tracking = await AdMob.trackingAuthorizationStatus();
+          if (tracking.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
+        } catch (_) {} // ATT availability does not block the game or grant permission.
+      })()));
     }
     preload('rewarded');
     if (!adFree()) preload('interstitial');
@@ -959,13 +1033,23 @@ window.Ads = (function () {
   async function init() {
     if (!AdMob || privacyBusy) return;
     try {
+      await window.AgeAssurance.refresh();
+      const required = window.AgeAssurance.requiresSharing();
+      await window.AgeAssurance.ensure();
+      if (!window.AgeAssurance.adsAllowed()) return;
+      if (required) consentInfoPromise = null; // refresh UMP with the resolved minor protections
       let info = await refreshConsentInfo();
       if (!info) return; // fail closed; a late refresh never presents anything on its own
       // Let UMP decide which forms are required, including the iOS IDFA explainer/ATT.
       if (info.status === 'REQUIRED' && info.isConsentFormAvailable) {
         privacyBusy = true;
         await window.Analytics.reconcile(false);
-        info = await AdMob.showConsentForm();
+        await AdMob.showConsentForm();
+        // iOS ATT completion can report OBTAINED with non-applicable analytics
+        // values. Refresh UMP applicability before applying the analytics gate.
+        info = await bounded(AdMob.requestConsentInfo(consentOptions()), 8000);
+        consentInfo = info;
+        consentInfoPromise = Promise.resolve(info);
       }
       // Ad initialization does not hold gameplay; eligibility still gates every load.
       adsStartPromise = startAds(info).catch(e => { canRequestAds = false; console.warn('Ads unavailable', e); });
@@ -1258,13 +1342,13 @@ window.Ads = (function () {
     if (!(all[dateToKey(d)] && all[dateToKey(d)].onTime)) d.setDate(d.getDate() - 1); // today not done yet: count up to yesterday
     return streakBack(all, d);
   }
-  // counts finished days going back from d; a saved day keeps the streak alive but does not add to it
+  // A saved date is one streak day, whether or not its challenge was completed later.
   function streakBack(all, d) {
     let n = 0;
     for (;;) {
       const r = all[dateToKey(d)];
-      if (r && r.onTime) n++;
-      else if (!(r && r.saved)) break;
+      if (r && (r.onTime || r.saved)) n++;
+      else break;
       d.setDate(d.getDate() - 1);
     }
     return n;
@@ -1282,11 +1366,14 @@ window.Ads = (function () {
   async function saveStreak() {
     const n = streakAtRisk();
     if (!n || busy) return;
+    const y = dayKey(-1), savedOn = dayKey();
     if (!(await rewarded(true))) return;
-    const y = dayKey(-1), rec = dayRec(y);
+    // Do not transfer a reward to a different date if midnight passed during the ad.
+    if (dayKey() !== savedOn || !streakAtRisk()) return;
+    const rec = dayRec(y);
     rec.saved = true; saveDay(y, rec);
-    store.set('ss_streak_save', dayKey());
-    showPopup(n + '-day streak saved!', 1800); celebrate(true);
+    store.set('ss_streak_save', savedOn);
+    showPopup(streakNow() + '-day streak saved!', 1800); celebrate(true);
     buzz([20, 40, 20], 'success');
     if (!$('calendar').hidden) renderCalendar();
     if (state === 'menu') renderMenu();
@@ -1997,6 +2084,21 @@ window.Ads = (function () {
   const pageEl = (m) => document.querySelector('.page[data-page="' + m + '"]');
   // Continue and past days are free with Remove Ads; unlocks always offer an (optional) ad.
   const adNote = (free) => (free && window.Store && window.Store.noAds()) ? 'Ad-free' : 'Watch a short ad';
+  let dailySelection = dayKey();
+  function dayClasses(rec, key) {
+    // A rescued date looks like any other credited streak day; its stored challenge result stays intact.
+    return (rec.played ? ' played' : '') + (rec.done || rec.saved ? ' done' : '') +
+      (rec.done && !rec.onTime && !rec.saved ? ' late' : '') + (key === dayKey() ? ' today' : '');
+  }
+  function dayStatus(rec) {
+    return rec.done ? (rec.onTime || rec.saved ? 'Complete' : 'Complete late')
+      : rec.saved ? 'Streak protected · challenge available' : rec.played ? 'Played · not completed' : 'Not played';
+  }
+  function dayPlayLabel(key, rec) {
+    if (key > dayKey()) return 'Available ' + fmtDay(key);
+    if (key < dayKey() && !rec.unlocked && !rec.played && !(window.Store && window.Store.noAds())) return 'Unlock · watch an ad';
+    return rec.done ? 'Play again' : key === dayKey() ? 'Play today' : 'Play this day';
+  }
 
   function weekStrip() {
     const today = new Date(); today.setHours(12, 0, 0, 0);
@@ -2005,8 +2107,10 @@ window.Ads = (function () {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
       const k = dateToKey(d), rec = dayRec(k), isToday = k === dayKey();
-      const cls = 'wk' + (rec.done ? ' done' : rec.saved ? ' saved' : rec.played ? ' played' : '') + (isToday ? ' today' : '');
-      html += '<div class="' + cls + '">' + d.toLocaleDateString(undefined, { weekday: 'narrow' }) + '<i>' + (rec.done ? '&#10003;' : '') + '</i></div>';
+      const future = k > dayKey();
+      const cls = 'wk' + dayClasses(rec, k) + (future ? ' future' : '');
+      const label = fmtDay(k, { weekday: 'long', month: 'short', day: 'numeric' }) + ', ' + (future ? 'upcoming' : dayStatus(rec)) + (isToday ? ', today' : '');
+      html += '<button type="button" class="' + cls + '" data-week-day="' + k + '" aria-label="' + label + '" aria-pressed="' + (k === dailySelection) + '">' + d.toLocaleDateString(undefined, { weekday: 'narrow' }) + '<i aria-hidden="true">' + (rec.done || rec.saved ? '&#10003;' : '') + '</i></button>';
     }
     return html;
   }
@@ -2050,16 +2154,20 @@ window.Ads = (function () {
       page.querySelector('.page-lock').hidden = un;
       if (!un) { renderLock(page, m); play.innerHTML = 'Unlock ' + MODES[m] + '<small>' + adNote() + '</small>'; return; }
       if (m === 'daily') {
-        const key = dayKey(); pinDayShape(key);
+        const key = dailySelection; pinDayShape(key);
         const cfg = dailyConfig(key), rec = dayRec(key), st = streakNow();
         $('dailyDate').textContent = fmtDay(key);
+        $('dailyKicker').textContent = key === dayKey() ? "Today's shape" : key > dayKey() ? 'Upcoming shape' : 'Past challenge';
         $('dailyGlyph').setAttribute('d', glyphPath(cfg.shape));
         $('dailyShape').textContent = SHAPE_NAMES[cfg.shape] + (isUnlocked(cfg.shape) ? '' : ' · preview');
-        $('dailyGoal').textContent = rec.done ? 'Complete · see you tomorrow' : goalText(cfg);
+        $('dailyGoal').textContent = rec.done ? dayStatus(rec) : rec.saved ? 'Streak protected · ' + goalText(cfg) : goalText(cfg);
         $('dailyStreak').textContent = 'Streak ' + st;
+        $('dailyStreak').dataset.tier = String([30, 14, 7, 3].find(n => st >= n) || 1);
+        $('dailyStreak').setAttribute('aria-label', st + '-day streak');
         $('dailyStreak').hidden = !st;
         $('week').innerHTML = weekStrip();
-        play.textContent = rec.done ? 'Play again' : 'Play today';
+        play.textContent = dayPlayLabel(key, rec);
+        play.disabled = key > dayKey();
         renderSaveStreak();
         return;
       }
@@ -2305,8 +2413,13 @@ window.Ads = (function () {
     chooseShape(p, b); // commit now; the slide is presentation only
   }));
   document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => { initAudio(); onPlay(); }));
-  $('week').addEventListener('click', () => openCalendar());
-  $('week').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCalendar(); } });
+  $('week').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-week-day]');
+    if (!b || busy || state !== 'menu') return;
+    dailySelection = b.dataset.weekDay;
+    renderMenu();
+    $('week').querySelector('[data-week-day="' + dailySelection + '"]').focus();
+  });
   // Swipe left / right on the menu card to change mode.
   let swipe = null;
   $('menuCard').addEventListener('pointerdown', (e) => { swipe = e.target.closest('.shapes') ? null : { x: e.clientX, y: e.clientY }; });
@@ -2326,24 +2439,35 @@ window.Ads = (function () {
   });
 
   // ---------- calendar ----------
-  let calMonth = new Date(), calSel = dayKey();
+  let calMonth = new Date(), calSel = dayKey(), calReturnFocus = null;
   function calRange() {
     const min = new Date(); min.setHours(12, 0, 0, 0); min.setDate(min.getDate() - DAILY_HISTORY);
     return { min: dateToKey(min), max: dayKey() };
   }
   function openCalendar() {
     cancelResultCelebration();
-    calMonth = new Date(); calMonth.setDate(1); calSel = dayKey();
+    calReturnFocus = document.activeElement;
+    calSel = state === 'menu' && dailySelection <= dayKey() ? dailySelection : dayKey();
+    calMonth = keyToDate(calSel); calMonth.setDate(1);
     renderCalendar();
     $('calendar').hidden = false;
     $('calClose').focus();
   }
-  function closeCalendar() { $('calendar').hidden = true; if (state === 'menu') renderMenu(); }
+  function revealSurface(el) {
+    if (reduceMotion) return;
+    el.animate([{ opacity: 0, transform: 'translateY(12px) scale(.98)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+  function closeCalendar() {
+    $('calendar').hidden = true;
+    if (state === 'menu') renderMenu();
+    revealSurface(state === 'menu' ? menuEl : overEl);
+    if (calReturnFocus?.isConnected) calReturnFocus.focus();
+  }
   function renderCalendar() {
     const { min, max } = calRange();
     $('calStreak').textContent = streakNow();
     renderSaveStreak();
-    $('lgSaved').hidden = !Object.values(days()).some((r) => r.saved);
     $('calDone').textContent = daysDone();
     $('calMonth').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1, 12);
@@ -2357,8 +2481,8 @@ window.Ads = (function () {
     for (let n = 1; n <= last.getDate(); n++) {
       const k = dateToKey(new Date(first.getFullYear(), first.getMonth(), n, 12)), rec = dayRec(k);
       const off = k < min || k > max;
-      const cls = 'day' + (rec.done ? ' done' : rec.played ? ' played' : '') + (rec.saved && !rec.done ? ' saved' : '') + (k === max ? ' today' : '');
-      const label = fmtDay(k, { weekday: 'long', month: 'long', day: 'numeric' }) + (rec.done ? ', complete' : rec.saved ? ', streak saved' : rec.played ? ', played' : '');
+      const cls = 'day' + dayClasses(rec, k);
+      const label = fmtDay(k, { weekday: 'long', month: 'long', day: 'numeric' }) + ', ' + dayStatus(rec) + (k === max ? ', today' : '');
       html += '<button type="button" class="' + cls + '" data-day="' + k + '" aria-pressed="' + (k === calSel) + '" aria-label="' + label + '"' + (off ? ' disabled' : '') + '>' + n + '</button>';
     }
     $('calGrid').innerHTML = html;
@@ -2367,24 +2491,24 @@ window.Ads = (function () {
     const cfg = dailyConfig(calSel), rec = dayRec(calSel), isToday = calSel === max;
     $('calDayTitle').textContent = (isToday ? 'Today · ' : '') + fmtDay(calSel, { weekday: 'long', month: 'short', day: 'numeric' });
     $('calDayGoal').textContent = SHAPE_NAMES[cfg.shape] + ' · ' + goalText(cfg);
-    $('calDayStatus').textContent = rec.done ? 'Complete'
+    $('calDayStatus').textContent = rec.done || rec.saved ? dayStatus(rec)
       : rec.played ? 'Best ' + Math.min(rec.perf, cfg.goal.n) + ' / ' + cfg.goal.n + ' perfect drops'
       : isToday ? 'Not played yet' : 'Not played';
     const cp = $('calPlay');
-    if (isToday || rec.unlocked || rec.played || (window.Store && window.Store.noAds())) cp.innerHTML = rec.done ? 'Play again' : 'Play';
-    else cp.textContent = 'Unlock · watch an ad';
+    cp.textContent = dayPlayLabel(calSel, rec);
   }
-  async function playDay() {
-    if (busy) return;
-    const requestedDay = calSel;
+  async function playDay(requestedDay = calSel, source = 'calendar') {
+    if (busy || !appActive() || requestedDay > dayKey()) return;
+    const stillSelected = () => source === 'calendar' ? !$('calendar').hidden && calSel === requestedDay
+      : state === 'menu' && mode === 'daily' && dailySelection === requestedDay;
     const rec = dayRec(requestedDay), isToday = requestedDay === dayKey();
     if (!isToday && !rec.unlocked && !rec.played && !(window.Store && window.Store.noAds())) {
       if (!(await rewarded(true))) return;
-      rec.unlocked = true; saveDay(requestedDay, rec);
+      const current = dayRec(requestedDay); current.unlocked = true; saveDay(requestedDay, current);
     }
     // The reward belongs to the requested day even if the player navigated away
     // during loading. Do not start an obsolete calendar action.
-    if ($('calendar').hidden || calSel !== requestedDay) return;
+    if (!stillSelected() || !appActive()) return;
     $('calendar').hidden = true;
     mode = 'daily'; store.set('ss_mode2', mode);
     runDate = requestedDay;
@@ -2394,6 +2518,12 @@ window.Ads = (function () {
   $('overCalBtn').addEventListener('click', openCalendar);
   $('calMainBtn').addEventListener('click', openCalendar);
   $('calClose').addEventListener('click', closeCalendar);
+  $('calDailyMenu').addEventListener('click', () => {
+    if (busy) return;
+    $('calendar').hidden = true;
+    dailySelection = dayKey(); mode = 'daily'; store.set('ss_mode2', mode); runDate = null;
+    showMenu(); revealSurface(menuEl); $('calBtn').focus();
+  });
   $('calPlay').addEventListener('click', () => { initAudio(); playDay(); });
   $('calPrev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
   $('calNext').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
@@ -2495,6 +2625,7 @@ window.Ads = (function () {
     if (tut) tut.timers.forEach(clearTimeout);
     tut = null; hideCoach(); $('skipBtn').hidden = true;
     state = 'menu';
+    dailySelection = dayKey();
     menuEl.parentElement.classList.add('menu-open');
     trialRun = false;
     overEl.hidden = true; $('offer').hidden = true; scoreEl.hidden = true; $('sub').hidden = true; $('bestTag').hidden = true;
@@ -2519,7 +2650,7 @@ window.Ads = (function () {
     return ok;
   }
   async function onPlay() {
-    if (state !== 'menu' || busy || window.Ads.isOpen()) return;
+    if (state !== 'menu' || busy || window.Ads.isOpen() || !appActive()) return;
     const p = pageEl(mode).querySelector('[data-picker]');
     if (p && (p._gesture || p._drag)) return; // only an unresolved held gesture waits
     finishMenuSelection();
@@ -2528,7 +2659,7 @@ window.Ads = (function () {
       renderMenu();
       return;
     }
-    if (mode === 'daily') runDate = dayKey();
+    if (mode === 'daily') { await playDay(dailySelection, 'menu'); return; }
     if (mode !== 'daily' && !isUnlocked(shape)) {
       // one rewarded ad = one trial run with this shape; it unlocks for good only by score or Unlock All Shapes
       if (await rewarded()) { trialRun = true; start(); }
@@ -3032,12 +3163,29 @@ window.Ads = (function () {
 
   // ---------- input ----------
   const scoreEl = $('score'), popupEl = $('popup'), menuEl = $('menu'), overEl = $('over');
+  let nativeActive = true, windowActive = true;
+  const appActive = () => nativeActive && windowActive && !document.hidden;
+  function backgroundInput() {
+    // A canceled system gesture must not survive as menu/carousel input on return.
+    swipe = null;
+    if (state === 'menu') cancelMenuNavigation();
+  }
+  window.addEventListener('blur', () => { windowActive = false; backgroundInput(); });
+  window.addEventListener('focus', () => { windowActive = true; });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) backgroundInput(); });
+  if (isApp && capx) {
+    window.capacitorExports.registerPlugin('App').addListener('appStateChange', ({ isActive }) => {
+      nativeActive = isActive;
+      if (isActive) windowActive = true;
+      else backgroundInput();
+    }).catch(e => console.warn('App lifecycle listener unavailable', e));
+  }
   function onTap() {
-    if (busy || window.Ads.isOpen()) return;
+    if (busy || window.Ads.isOpen() || !appActive()) return;
     initAudio();
     if (tut && (tut.lock || state !== 'playing')) return;
-    if (state === 'menu') onPlay();
-    else if (state === 'playing' && moving) place();
+    // Menus start through their explicit Play button, never an edge/system gesture.
+    if (state === 'playing' && moving) place();
     else if (state === 'over' && performance.now() - overAt > 700 && !overEl.hidden && !$('againBtn').hidden && !trialRun) playAgain();
   }
   window.addEventListener('pointerdown', (e) => {
@@ -3053,7 +3201,7 @@ window.Ads = (function () {
     if (e.target.closest && e.target.closest('button, a')) return;
     if (!$('calendar').hidden) return;
     if (busy || window.Ads.isOpen()) return;
-    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); onTap(); }
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (state === 'menu') onPlay(); else onTap(); }
   });
   $('mute').addEventListener('click', () => {
     muted = !muted; store.set('ts_muted', muted ? 1 : 0); renderToggles();
@@ -3072,28 +3220,28 @@ window.Ads = (function () {
   });
   $('menuBtn').addEventListener('click', () => { if (!busy) { runDate = null; showMenu(); } });
 
-  const analyticsDialog = $('analyticsChoices');
-  $('analyticsBtn').hidden = !window.Analytics.available();
-  async function renderAnalytics() {
-    await window.Analytics.ready();
-    $('analyticsStatus').textContent = 'Collection: ' + (window.Analytics.enabled() ? 'On' : 'Off');
-    $('analyticsId').textContent = window.Analytics.requestId() || 'Not available yet';
-    $('analyticsPause').textContent = window.Analytics.paused() ? 'Resume when privacy choices permit' : 'Pause analytics on this device';
+  async function closeDialog(dialog) {
+    if (!dialog.open) return;
+    if (dialog._closing) return dialog._closing;
+    dialog.inert = true; dialog.dataset.closing = '';
+    dialog._closing = (async () => {
+      if (!reduceMotion) {
+        await dialog.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(8px) scale(.98)' }],
+          { duration: 160, easing: 'ease-out' }).finished.catch(() => {});
+      }
+      dialog.close(); dialog.inert = false; delete dialog.dataset.closing;
+    })();
+    await dialog._closing; dialog._closing = null;
   }
-  $('analyticsBtn').addEventListener('click', async () => {
-    if (busy || window.Ads.isOpen()) return;
-    await renderAnalytics(); analyticsDialog.showModal();
-  });
-  $('analyticsClose').addEventListener('click', () => analyticsDialog.close());
-  $('analyticsPause').addEventListener('click', async () => {
-    $('analyticsPause').disabled = true;
-    await window.Analytics.setPaused(!window.Analytics.paused());
-    await renderAnalytics(); $('analyticsPause').disabled = false;
-  });
+  document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('cancel', e => {
+    e.preventDefault(); closeDialog(dialog);
+  }));
   // UMP test UI start
   if (window.UMPTest) {
     const dialog = $('umpTestChoices');
     $('umpTestBtn').hidden = false;
+    $('umpSimulator').hidden = window.Capacitor.getPlatform() !== 'ios';
+    $('umpSimulator').addEventListener('click', () => { $('umpDevices').value = 'SIMULATOR'; });
     const render = async () => {
       const state = await window.Analytics.diagnostics();
       $('umpStatus').textContent = JSON.stringify(state) + (window.Ads.consentError() ? ' — ' + window.Ads.consentError() : '');
@@ -3105,12 +3253,12 @@ window.Ads = (function () {
       $('umpDevices').value = config.testDeviceIdentifiers.join('\n');
       await render(); dialog.showModal();
     });
-    $('umpClose').addEventListener('click', () => dialog.close());
+    $('umpClose').addEventListener('click', () => closeDialog(dialog));
     $('umpSave').addEventListener('click', async () => {
       $('umpSave').disabled = true;
       try {
         window.UMPTest.save($('umpRegion').value, $('umpDevices').value);
-        dialog.close();
+        await closeDialog(dialog);
         await window.Ads.resetConsentForTest();
         await render(); dialog.showModal();
       } catch (e) { $('umpStatus').textContent = String(e.message || e); if (!dialog.open) dialog.showModal(); }
@@ -3124,7 +3272,6 @@ window.Ads = (function () {
   document.addEventListener('ads:privacy', syncPrivacyBtns);
   syncPrivacyBtns();
   privacyBtns.forEach((b) => b.addEventListener('click', async () => {
-    analyticsDialog.close();
     await window.Ads.showPrivacyOptions();
   }));
 
@@ -3133,6 +3280,7 @@ window.Ads = (function () {
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    if (!appActive()) { requestAnimationFrame(frame); return; }
     if (analyticsRun && analyticsRun.started && window.Analytics.enabled() && state === 'playing' && !tut && !busy && !document.hidden) analyticsRun.elapsed_seconds += dt;
     if (spin) {
       spin.t = Math.min(1, spin.t + dt / (reduceMotion ? 0.01 : (spin.dur || 0.6)));
@@ -3270,7 +3418,7 @@ window.Ads = (function () {
     const info = window.Ads.consentInfo();
     if (!info) return; // A pending/offline refresh must not hold menu or replay input.
     consentStarted = true;
-    const presenting = info.status === 'REQUIRED' && info.isConsentFormAvailable;
+    const presenting = window.AgeAssurance.requiresSharing() || (info.status === 'REQUIRED' && info.isConsentFormAvailable);
     if (presenting) {
       busy = true;
       menuEl.parentElement.inert = true; $('corner').inert = true;

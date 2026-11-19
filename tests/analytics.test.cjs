@@ -11,10 +11,14 @@ async function boot(options = {}) {
   const listeners = {};
   let now = Date.now();
   const record = (plugin, method, args) => { calls.push({ plugin, method, args }); if (state.fail === method) throw Error('unavailable'); };
-  const firebase = Object.fromEntries(['setEnabled', 'setConsent', 'logEvent'].map(method => [method, async args => { record('FirebaseAnalytics', method, args); }]));
+  const firebase = Object.fromEntries(['setEnabled', 'setConsent', 'logEvent'].map(method => [method, async args => {
+    record('FirebaseAnalytics', method, args);
+    if (method === 'setEnabled' && args.enabled === true && state.onEnable) await state.onEnable();
+  }]));
   firebase.getAppInstanceId = async () => ({ appInstanceId: 'test-installation' });
   const info = () => ({ status: state.status, canRequestAds: state.canRequestAds, isConsentFormAvailable: state.form, privacyOptionsRequirementStatus: 'REQUIRED' });
   const plugins = {
+    RegionalAge: { getRequirements: async () => ({ status: 'notRequired' }) },
     FirebaseAnalytics: firebase,
     AnalyticsConsent: { getConsentModes: async () => { record('AnalyticsConsent', 'getConsentModes'); return { values: state.modes }; } },
     AdMob: {
@@ -49,7 +53,7 @@ async function boot(options = {}) {
     window: { Capacitor: { getPlatform: () => state.platform || 'ios' }, capacitorExports: { registerPlugin: name => plugins[name] } }
   };
   vm.createContext(context);
-  for (let code of scripts.filter(code => ['window.Analytics =', 'window.UMPTest =', 'window.Store =', 'window.Ads ='].some(x => code.includes(x)))) {
+  for (let code of scripts.filter(code => ['window.AgeAssurance =', 'window.Analytics =', 'window.UMPTest =', 'window.Store =', 'window.Ads ='].some(x => code.includes(x)))) {
     code = code.replace('const ANALYTICS_ALLOWED = false;', `const ANALYTICS_ALLOWED = ${state.allowed !== false};`);
     vm.runInContext(code, context);
   }
@@ -83,7 +87,7 @@ for (const modes of ['', '1112', '1110', '1114', '111', '11111', '111x', 1111]) 
     assert.equal(s.analytics.enabled(), false);
   });
 }
-for (const [status, modes, enabled] of [['NOT_REQUIRED', '3333', true], ['NOT_REQUIRED', '2221', true], ['OBTAINED', '3333', false], ['REQUIRED', '1111', false], ['UNKNOWN', '1111', false], ['NOT_REQUIRED', '3332', false], ['NOT_REQUIRED', '3334', false]]) {
+for (const [status, modes, enabled] of [['NOT_REQUIRED', '3333', true], ['NOT_REQUIRED', '2221', true], ['OBTAINED', '3333', true], ['REQUIRED', '1111', false], ['UNKNOWN', '1111', false], ['NOT_REQUIRED', '3332', false], ['NOT_REQUIRED', '3334', false]]) {
   test(`${status} + ${modes}: collection ${enabled}`, async () => {
     const s = await boot({ status, modes }); await s.start();
     assert.equal(s.analytics.enabled(), enabled);
@@ -184,4 +188,42 @@ test('native cold-start setup disables persisted collection before bridge/UMP; n
   assert.match(swift, /Analytics.setAnalyticsCollectionEnabled\(false\)/);
   assert.match(readFileSync('ios/App/App/Info.plist', 'utf8'), /GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED<\/key><false\/>/);
   assert.match(manifest, /google_analytics_adid_collection_enabled" android:value="false"/);
+});
+
+test('pause during native enable never reopens collection or emits stale events', async () => {
+  let release, started;
+  const enabling = new Promise(resolve => { started = resolve; });
+  const held = new Promise(resolve => { release = resolve; });
+  const s = await boot({ onEnable: () => { started(); return held; } });
+  const grant = s.start();
+  await enabling;
+  const pause = s.analytics.setPaused(true);
+  release();
+  await Promise.all([grant, pause]);
+  s.analytics.track('level_start', { mode: 'endless', level_name: 'square' });
+  assert.equal(s.analytics.enabled(), false);
+  assert.equal((await s.logs()).length, 0);
+  assert.equal(s.calls.filter(c => c.method === 'setEnabled').at(-1).args.enabled, false);
+});
+
+test('menu footer directly retains policy and conditional UMP choices without Analytics controls', () => {
+  const panel = html.slice(html.indexOf('<footer class="menu-footer"'), html.indexOf('<!-- UMP test dialog start -->'));
+  assert.doesNotMatch(html, /id="analyticsChoices"|id="analyticsBtn"/);
+  assert.match(panel, /Privacy policy/); assert.match(panel, /privacy-btn" hidden>Privacy choices/);
+  assert.doesNotMatch(panel, /Analytics:|analyticsStatus|analyticsPause|mailto:|privacy request/i);
+});
+
+test('iOS and Android UMP analytics denial disables native collection without a local toggle', async () => {
+  for (const platform of ['ios', 'android']) {
+    const s = await boot({ platform, modes: '1111', privacyModes: '1112' });
+    await s.start(); assert.equal(s.analytics.enabled(), true);
+    s.analytics.track('level_start', { mode: 'endless' });
+    await s.ads.showPrivacyOptions();
+    assert.ok(s.calls.some(c => c.method === 'showPrivacyOptionsForm'));
+    assert.equal(s.analytics.enabled(), false);
+    s.analytics.track('level_end', { mode: 'endless' });
+    assert.equal((await s.logs()).length, 0);
+    assert.equal(s.calls.filter(c => c.method === 'setEnabled').at(-1).args.enabled, false);
+    assert.equal(s.calls.filter(c => c.method === 'setConsent' && c.args.type === 'ANALYTICS_STORAGE').at(-1).args.status, 'DENIED');
+  }
 });

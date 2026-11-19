@@ -21,6 +21,7 @@ function setup(overrides = {}, platform = 'ios', autoStart = true, clock = Date)
       return overrides[name] ? overrides[name](...args) : info(true);
     };
   }
+  plugin.trackingAuthorizationStatus = overrides.trackingAuthorizationStatus || (async () => ({ status: 'authorized' }));
   plugin.addListener = async (name, fn) => { listeners[name] = fn; return { remove() {} }; };
   plugin.showRewardVideoAd = async () => {
     calls.push('showRewardVideoAd');
@@ -35,7 +36,7 @@ function setup(overrides = {}, platform = 'ios', autoStart = true, clock = Date)
     listeners.interstitialAdDismissed?.();
   };
   const events = {};
-  const window = { Analytics: { reconcile: async () => true, track() {} }, Capacitor: { getPlatform: () => platform },
+  const window = { AgeAssurance: { refresh: async () => {}, ensure: async () => {}, requiresSharing: () => false, adsAllowed: () => true, trackingAllowed: () => true, consentOptions: () => ({}), adOptions: () => ({}) }, Analytics: { reconcile: async () => true, track() {} }, Capacitor: { getPlatform: () => platform },
     capacitorExports: { registerPlugin: () => plugin }, Store: { noAds: () => false } };
   vm.runInNewContext(source, { window, console: { warn() {} }, Event: class { constructor(type) { this.type = type; } },
     document: { dispatchEvent(e) { events[e.type]?.(); }, addEventListener(n, fn) { events[n] = fn; },
@@ -54,12 +55,43 @@ for (const platform of ['ios', 'android']) {
     assert.equal(s.ads.privacyRequired(), true);
   });
   test(`${platform}: form completes before SDK initialization; UMP owns ATT`, async () => {
-    const s = setup({ requestConsentInfo: () => info(false, { status: 'REQUIRED', isConsentFormAvailable: true }),
+    let requests = 0;
+    const s = setup({ requestConsentInfo: () => ++requests === 1 ? info(false, { status: 'REQUIRED', isConsentFormAvailable: true }) : info(true),
       showConsentForm: () => info(true) }, platform);
     await flush();
-    assert.deepEqual(s.calls, ['requestConsentInfo', 'showConsentForm', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial']);
+    assert.deepEqual(s.calls, ['requestConsentInfo', 'showConsentForm', 'requestConsentInfo', 'initialize', 'prepareRewardVideoAd', 'prepareInterstitial']);
   });
 }
+test('iOS ATT completion uses refreshed UMP applicability instead of the form status', async () => {
+  let requests = 0;
+  const s = setup({
+    requestConsentInfo: () => ++requests === 1 ? info(false, { isConsentFormAvailable: true }) : info(true),
+    showConsentForm: () => info(true, { status: 'OBTAINED' })
+  }, 'ios', false);
+  const reconciled = [];
+  s.window.Analytics.reconcile = async status => { reconciled.push(status); };
+  await s.ads.startup(); await flush();
+  assert.equal(s.ads.consentInfo().status, 'NOT_REQUIRED');
+  assert.equal(reconciled.at(-1), 'NOT_REQUIRED');
+  assert.ok(!reconciled.includes('OBTAINED'), 'form completion alone cannot grant analytics');
+  await s.ads.refreshConsentInfo();
+  assert.equal(requests, 2, 'the cached result is the refreshed post-form result');
+});
+test('a failed post-form refresh leaves collection and ad requests disabled', async () => {
+  let requests = 0;
+  const s = setup({
+    requestConsentInfo: () => {
+      if (++requests === 1) return info(false, { isConsentFormAvailable: true });
+      throw Error('offline after ATT');
+    }, showConsentForm: () => info(true, { status: 'OBTAINED' })
+  }, 'ios', false);
+  const reconciled = [];
+  s.window.Analytics.reconcile = async status => { reconciled.push(status); };
+  await s.ads.startup(); await flush();
+  assert.equal(reconciled.at(-1), false);
+  assert.ok(!s.calls.includes('initialize'));
+  assert.equal(await s.ads.showRewarded(), false);
+});
 test('pending consent cannot be bypassed by a rewarded action', async () => {
   const pending = deferred();
   const s = setup({ requestConsentInfo: () => pending.promise });
@@ -205,7 +237,7 @@ test('launch refresh is non-presenting and shared with the later consent boundar
   await refresh;
   assert.deepEqual(s.calls, ['requestConsentInfo']);
   await s.ads.startup();
-  assert.equal(s.calls.filter(c => c === 'requestConsentInfo').length, 1);
+  assert.equal(s.calls.filter(c => c === 'requestConsentInfo').length, 2);
   assert.equal(s.calls.filter(c => c === 'showConsentForm').length, 1);
 });
 
@@ -275,4 +307,23 @@ for (const platform of ['ios', 'android']) test(`${platform}: interstitial show 
   await flush(); await flush();
   assert.equal(s.calls.filter(c => c === 'showInterstitial').length, 1);
   assert.equal(finished, true, 'replay releases after failed show without waiting for the 120-second watchdog');
+});
+
+test('iOS ATT fallback follows UMP, asks only while undetermined and is shared across privacy refreshes', async () => {
+  for (const status of ['notDetermined', 'authorized', 'denied', 'restricted']) {
+    const s = setup({ trackingAuthorizationStatus: async () => ({ status }) }, 'ios', false);
+    await s.ads.startup(); await flush();
+    await s.ads.showPrivacyOptions(); await flush();
+    const requests = s.calls.filter(c => c === 'requestTrackingAuthorization');
+    assert.equal(requests.length, status === 'notDetermined' ? 1 : 0, status);
+    if (requests.length) assert.ok(s.calls.indexOf('requestConsentInfo') < s.calls.indexOf('requestTrackingAuthorization'));
+  }
+});
+test('known minors and Android never receive the iOS ATT fallback', async () => {
+  for (const platform of ['ios', 'android']) {
+    const s = setup({ trackingAuthorizationStatus: async () => ({ status: 'notDetermined' }) }, platform, false);
+    if (platform === 'ios') s.window.AgeAssurance.trackingAllowed = () => false;
+    await s.ads.startup(); await flush();
+    assert.ok(!s.calls.includes('requestTrackingAuthorization'));
+  }
 });
