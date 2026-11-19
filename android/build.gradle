@@ -19,6 +19,16 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
+        // Optional private CI copy of the exact tested SDK. All other artifacts
+        // still resolve from their normal repositories with original POM deps.
+        if (rootProject.file('.gradle/age-signals-maven').isDirectory()) {
+            exclusiveContent {
+                forRepository {
+                    maven { url = rootProject.uri('.gradle/age-signals-maven') }
+                }
+                filter { includeVersion('com.google.android.play', 'age-signals', '0.0.5') }
+            }
+        }
         google()
         mavenCentral()
     }

@@ -41,6 +41,12 @@ jobs:
             exit 1
           fi
       - run: npm ci
+      - name: Restore verified Age Signals dependency
+        env:
+          AGE_SIGNALS_005_CACHE_1: ${{ secrets.AGE_SIGNALS_005_CACHE_1 }}
+          AGE_SIGNALS_005_CACHE_2: ${{ secrets.AGE_SIGNALS_005_CACHE_2 }}
+          AGE_SIGNALS_005_CACHE_3: ${{ secrets.AGE_SIGNALS_005_CACHE_3 }}
+        run: node scripts/restore-age-signals-cache.cjs
       - name: Build web assets
         env:
           ADS_TEST: ${{ inputs.real_ads && 'false' || 'true' }}
