@@ -407,13 +407,14 @@ dialog[data-closing]::backdrop { opacity: 0; }
 #adSim p { margin: 0; color: rgba(255,255,255,0.7); font-size: 13px; line-height: 1.5; }
 #adClose { pointer-events: auto; }
 #adClose:disabled { opacity: 0.4; }
-/* menu pages: three equal-height pages side by side; the track slides between them */
-.pages { width: 100%; overflow: hidden; touch-action: pan-y; }
-.track { display: flex; transition: transform var(--motion-menu) var(--ease-ui); }
+/* The active mode sets the viewport height; Daily does not stretch the other pages. */
+.pages { width: 100%; overflow: hidden; touch-action: pan-y; transition: height var(--motion-menu) var(--ease-ui); }
+.track { display: flex; align-items: flex-start; transition: transform var(--motion-menu) var(--ease-ui); }
 .page { flex: 0 0 100%; min-width: 0; box-sizing: border-box; padding: 2px; display: flex; flex-direction: column; gap: 12px; }
 .page-main { display: flex; flex-direction: column; gap: 12px; flex: 1; }
 .page .play { margin-top: auto; min-height: 62px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 10px; }
-.page-main, .page-lock { min-height: 182px; }
+.page-main { min-height: 0; }
+.page-lock { min-height: 182px; }
 .best { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; }
 .best .big { font-size: 34px; }
 .best .sub { font-size: 12px; color: var(--ink-soft); text-wrap: balance; }
@@ -442,7 +443,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
 .hud.menu-open #popup { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 60px); width: max-content; max-width: calc(100% - 32px); margin-top: 0; z-index: 16; }
 @media (max-height: 720px) { #menu { gap: 6px; } }
 @media (max-height: 640px) {
-  #menu .page-main, #menu .page-lock { min-height: 142px; }
+  #menu .page-lock { min-height: 142px; }
   #menu .page, #menu .page-main { gap: 8px; }
   #menu .page .play { min-height: 52px; }
 }
@@ -483,7 +484,7 @@ p, .info, .label, .celebrate-title { text-wrap: balance; }
         <button type="button" class="seg-btn" role="radio" data-mode="time">Time Attack</button>
         <button type="button" class="seg-btn" role="radio" data-mode="daily">Daily</button>
       </div>
-      <div class="pages"><div class="track" id="track">
+      <div class="pages" id="pages"><div class="track" id="track">
       <section class="page" data-page="endless" aria-label="Endless">
         <div class="page-main">
           <div class="shapes" data-picker role="radiogroup" aria-label="Shape"></div>
@@ -2088,6 +2089,14 @@ window.Ads = (function () {
   const shapeBtns = document.querySelectorAll('.shape');
   const segBtns = document.querySelectorAll('.seg-btn');
   const pageEl = (m) => document.querySelector('.page[data-page="' + m + '"]');
+  function sizeMenuPage() {
+    const page = pageEl(mode), viewport = $('pages');
+    // A hidden menu has no measurable content; renderMenu runs again when reopened.
+    if (page.offsetHeight) viewport.style.height = Math.ceil(page.getBoundingClientRect().height) + 'px';
+  }
+  // Re-measure after font loading, width changes or dynamic Daily/purchase text.
+  const menuPageObserver = new ResizeObserver(sizeMenuPage);
+  MODE_ORDER.forEach(m => menuPageObserver.observe(pageEl(m)));
   // Continue and past days are free with Remove Ads; unlocks always offer an (optional) ad.
   const adNote = (free) => (free && window.Store && window.Store.noAds()) ? 'Ad-free' : 'Watch a short ad';
   let dailySelection = dayKey();
@@ -2199,6 +2208,7 @@ window.Ads = (function () {
     });
     renderStoreLinks();
     syncCarousels();
+    sizeMenuPage();
     if (state === 'menu' && mode === 'daily' && modeUnlocked('daily') && !tut && !store.get('ss_intro_daily', 0)) showIntro('daily');
   }
 
