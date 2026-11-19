@@ -63,7 +63,8 @@ public class RegionalAgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "RegionalAge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "getRequirements", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "requestRequiredAgeRange", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "requestRequiredAgeRange", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "checkAnalyticsUpdate", returnType: CAPPluginReturnPromise)
     ]
     private var requesting = false
 
@@ -87,6 +88,49 @@ public class RegionalAgePlugin: CAPPlugin, CAPBridgedPlugin {
             return ["status": "unavailable"]
         } catch {
             return ["status": "error"]
+        }
+    }
+
+    // Specific first gameplay-measurement update, not an app-version or UMP reset.
+    // The affected feature is optional Analytics only. Known minors never receive it,
+    // so this does not request permission to enable new processing for a child.
+    @objc func checkAnalyticsUpdate(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard #available(iOS 26.2, *) else {
+                call.resolve(["allowed": true]); return
+            }
+            do {
+                guard #available(iOS 26.4, *) else {
+                    // The older system cannot show the adult acknowledgement sheet.
+                    // Keep this new measurement off in eligible accounts; core play remains.
+                    let eligible = try await AgeRangeService.shared.isEligibleForAgeFeatures
+                    call.resolve(["allowed": !eligible]); return
+                }
+                let features = try await AgeRangeService.shared.requiredRegulatoryFeatures
+                if features.contains(.significantAppChangeRequiresParentalConsent) {
+                    call.resolve(["allowed": false]); return
+                }
+                guard features.contains(.significantAppChangeRequiresAdultNotification) else {
+                    call.resolve(["allowed": true]); return
+                }
+                let noticeKey = "BENO74.gameplay-measurement-v1.acknowledged"
+                if UserDefaults.standard.bool(forKey: noticeKey) {
+                    call.resolve(["allowed": true]); return
+                }
+                guard let controller = self.bridge?.viewController,
+                      let scene = controller.viewIfLoaded?.window?.windowScene,
+                      controller.presentedViewController == nil else {
+                    call.resolve(["allowed": false]); return
+                }
+                try await AgeRangeService.shared.showSignificantUpdateAcknowledgment(
+                    in: scene,
+                    updateDescription: "Adds consent-managed gameplay measurement, including game progress, scores, results and purchase events, to improve the game. No account, birth date or saved game is sent. Optional gameplay analytics remains off for known minors. Advertising privacy choices are unchanged.")
+                UserDefaults.standard.set(true, forKey: noticeKey)
+                call.resolve(["allowed": true])
+            } catch {
+                // An unavailable/error result is not an exemption or consent.
+                call.resolve(["allowed": false])
+            }
         }
     }
 

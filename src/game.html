@@ -686,6 +686,7 @@ window.AgeAssurance = (() => {
     ? window.capacitorExports.registerPlugin('RegionalAge') : null;
   let state = { status: ['ios', 'android'].includes(platform) ? 'pending' : 'web' };
   let checkPromise, requestPromise;
+  let analyticsUpdateAllowed = platform !== 'ios';
   const valid = new Set(['notRequired', 'required', 'resolved', 'unsupported', 'unavailable', 'unresolved', 'declined', 'verificationRequired', 'error']);
   function accept(result) {
     if (!result || !valid.has(result.status)) return { status: 'error' };
@@ -709,6 +710,11 @@ window.AgeAssurance = (() => {
         try { state = accept(await plugin.requestRequiredAgeRange()); }
         catch (_) { state = { status: 'error' }; }
       }
+      if (platform === 'ios' && ['resolved', 'notRequired', 'unsupported'].includes(state.status)) {
+        // A significant-update acknowledgement never substitutes for UMP consent.
+        try { analyticsUpdateAllowed = (await plugin.checkAnalyticsUpdate()).allowed === true; }
+        catch (_) { analyticsUpdateAllowed = false; }
+      }
       return state;
     })());
   }
@@ -716,7 +722,7 @@ window.AgeAssurance = (() => {
   const adsAllowed = () => regularFlow() || state.status === 'resolved';
   // Conservative per-user choice: no optional analytics for a known minor until
   // a separately verified minor analytics-permission path exists. Never log the signal.
-  const analyticsAllowed = () => regularFlow() || (state.status === 'resolved' && !state.minor);
+  const analyticsAllowed = () => analyticsUpdateAllowed && (regularFlow() || (state.status === 'resolved' && !state.minor));
   const adOptions = () => state.status === 'resolved' && state.minor
     ? (state.childDirected ? { maxAdContentRating: 'General' } : {}) : {};
   const consentOptions = () => state.status === 'resolved' && state.minor ? { tagForUnderAgeOfConsent: true } : {};
